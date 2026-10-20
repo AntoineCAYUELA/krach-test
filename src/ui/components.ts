@@ -5,10 +5,11 @@ import { CONFIG } from '../config.ts';
 import { CONSUMABLES } from '../data/consumables.ts';
 import { RARITY_NAMES, TOOLS } from '../data/tools.ts';
 import { CARDS, FAMILY_NAMES, type CardCheck } from '../engine/cards.ts';
+import { STRESS_NAMES, stressState } from '../engine/life.ts';
 import { canUseConsumable, GameError, signalPackOffers, useConsumable, type RunState } from '../engine/run.ts';
 import { SETUP_NAMES, SETUP_TYPES } from '../engine/scoring.ts';
 import type { CardId, Direction } from '../engine/types.ts';
-import { fmt } from '../format.ts';
+import { euros, fmt } from '../format.ts';
 import type { App } from './app.ts';
 import { h, toast, type Child } from './dom.ts';
 import { openModal } from './modal.ts';
@@ -61,13 +62,33 @@ export function progressBar(value: number, max: number): HTMLElement {
   return h('div', { class: `progress${ratio >= 1 ? ' progress-full' : ''}` }, h('div', { class: 'progress-fill', style: `width: ${ratio * 100}%` }));
 }
 
-/** Barre du haut des écrans hors trading : titre, graine, glossaire, options, menu. */
+/** Jauge de stress (GDD 13.2) : valeur, état et repères des paliers à 50 et 80. */
+export function stressGauge(stress: number, compact = false): HTMLElement {
+  const state = stressState(stress);
+  const { nervous, tilt, stressMax } = CONFIG.life;
+  return h(
+    'div',
+    { class: `stress-gauge stress-${state}${compact ? ' compact' : ''}`, title: `Nerveux à partir de ${nervous.threshold}, tilt à partir de ${tilt.threshold}` },
+    h('span', { class: 'stat-label' }, 'Stress'),
+    h('span', { class: 'stat-value' }, `${fmt(stress, 0)} · `, state === 'tilt' ? term('tilt', STRESS_NAMES[state]) : STRESS_NAMES[state]),
+    h(
+      'div',
+      { class: 'stress-bar' },
+      h('div', { class: 'stress-fill', style: `width: ${(stress / stressMax) * 100}%` }),
+      h('span', { class: 'stress-mark', style: `left: ${(nervous.threshold / stressMax) * 100}%` }),
+      h('span', { class: 'stress-mark', style: `left: ${(tilt.threshold / stressMax) * 100}%` }),
+    ),
+  );
+}
+
+/** Barre du haut des écrans hors trading : titre, graine, stress et épargne, glossaire, options, menu. */
 export function topBar(app: App, title: Child, run: RunState | null): HTMLElement {
   return h(
     'header',
     { class: 'topbar' },
     h('div', { class: 'brand' }, 'Krach Test'),
     h('div', { class: 'topbar-title' }, title),
+    run?.life ? h('div', { class: 'topbar-life' }, stressGauge(run.life.stress, true), h('span', { class: 'savings', title: 'Épargne personnelle' }, `Épargne ${euros(run.life.savings)}`)) : null,
     h(
       'div',
       { class: 'topbar-actions' },

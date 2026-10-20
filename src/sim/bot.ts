@@ -10,6 +10,7 @@ import {
   discardCards,
   finishSummary,
   handContext,
+  leaveEntracte,
   leaveShop,
   openPosition,
   passCandle,
@@ -81,6 +82,7 @@ function options(run: RunState): Option[] {
       twoPercentOk: false,
       journalBonus: run.journalBonus,
       formationBonus: run.formations[setup.type] ?? 0,
+      ...(seance.stress ? { stressState: seance.stress.state } : {}),
     });
     return { direction, validIndices, score: multi.total * (1 + validIndices.length) };
   });
@@ -148,8 +150,9 @@ export interface RunOutcome {
   capital: number;
 }
 
+/** Run du GDD 7.3 : la vie du trader (GDD 13) est désactivée. */
 export function simulateRun(seed: number, build: Build): RunOutcome {
-  const run = createRun(seed, { events: SIM_EVENTS });
+  const run = createRun(seed, { events: SIM_EVENTS, life: false });
   const results: boolean[] = [];
   for (let i = 0; i < CONFIG.run.seanceCount; i++) {
     run.tools = [...(build.tools[i] ?? [])];
@@ -159,6 +162,7 @@ export function simulateRun(seed: number, build: Build): RunOutcome {
     results.push(won);
     if (!won) break;
     finishSummary(run);
+    if (run.phase === 'entracte') leaveEntracte(run);
     if (run.phase === 'shop') leaveShop(run);
   }
   return { results, capital: run.capital };

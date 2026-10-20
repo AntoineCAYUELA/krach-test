@@ -67,4 +67,12 @@ export type ConsumableId = 'analystReport' | 'training' | 'signalPack' | 'hedge'
 
 export type EventId = 'rangeMarket' | 'earningsDay' | 'doubleFees' | 'lowVolatility' | 'crash';
 
+/** GDD 13 : poste, logement et activités, dans l'ordre des améliorations. */
+export const SETUP_IDS = ['laptop', 'tower', 'dualScreen'] as const;
+export type SetupId = (typeof SETUP_IDS)[number];
+export const HOME_IDS = ['studio', 't2', 'loft'] as const;
+export type HomeId = (typeof HOME_IDS)[number];
+export const ACTIVITY_IDS = ['evening', 'spa', 'weekend', 'trip'] as const;
+export type ActivityId = (typeof ACTIVITY_IDS)[number];
+
 export type Rarity = 'common' | 'uncommon' | 'rare';

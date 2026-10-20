@@ -7,6 +7,7 @@ import {
   createRun,
   discardCards,
   finishSummary,
+  leaveEntracte,
   leaveShop,
   openPosition,
   passCandle,
@@ -120,6 +121,7 @@ describe('séance', () => {
     run.capital = 1234;
     winSeance(run);
     finishSummary(run);
+    leaveEntracte(run);
     leaveShop(run);
     expect(run.seanceIndex).toBe(1);
     expect(run.seance!.capitalAtStart).toBe(1234);
@@ -139,7 +141,10 @@ describe('séance', () => {
       if (i > 0) beginSeance(run);
       winSeance(run);
       finishSummary(run);
-      if (i < 7) leaveShop(run);
+      if (i < 7) {
+        leaveEntracte(run);
+        leaveShop(run);
+      }
     }
     expect(run.phase).toBe('victory');
     expect(run.history).toHaveLength(8);
@@ -151,6 +156,7 @@ describe('boutique', () => {
     const run = startedRun(9);
     winSeance(run);
     finishSummary(run);
+    leaveEntracte(run);
     run.primes = 100;
     return run;
   }
@@ -161,6 +167,7 @@ describe('boutique', () => {
       run.tools = ['stopLoss', 'chartist'];
       winSeance(run);
       finishSummary(run);
+      leaveEntracte(run);
       const tools = run.shop!.tools;
       expect(tools).toHaveLength(2);
       expect(tools[0]).not.toBe(tools[1]);

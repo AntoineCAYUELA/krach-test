@@ -3,12 +3,14 @@
 
 import { CONFIG } from '../../config.ts';
 import { CARDS } from '../../engine/cards.ts';
+import { SETUPS } from '../../data/life.ts';
+import { STRESS_NAMES } from '../../engine/life.ts';
 import { finishSummary, REGIME_NAMES, type RunState } from '../../engine/run.ts';
 import { SETUP_NAMES } from '../../engine/scoring.ts';
 import { fmt, money, signed } from '../../format.ts';
 import type { App, View } from '../app.ts';
 import { COLORS, drawChart, type CandleMarker } from '../chart.ts';
-import { attempt, DIRECTION_LABELS, stat, topBar } from '../components.ts';
+import { attempt, DIRECTION_LABELS, stat, stressGauge, topBar } from '../components.ts';
 import { h } from '../dom.ts';
 import { term } from '../tooltip.ts';
 
@@ -54,8 +56,39 @@ export function renderSummary(app: App, run: RunState): View {
       h('td', null, SETUP_NAMES[t.setup.type]),
       h('td', { class: t.pnlNet >= 0 ? 'gain' : 'loss' }, `${signed(t.pnlNet)} $`),
       h('td', null, signed(t.score.performance)),
+      t.stress ? h('td', { class: t.stress.delta > 0 ? 'loss' : 'gain' }, signed(t.stress.delta, 0)) : null,
     ),
   );
+
+  // Stress de la séance (GDD 13.2) : départ, trades, fatigue.
+  const stress = seance.stress;
+  const life = run.life;
+  const stressPanel =
+    stress && life
+      ? h(
+          'section',
+          { class: 'panel' },
+          h('h2', null, 'Stress de la séance'),
+          h(
+            'table',
+            { class: 'rewards' },
+            h('tr', null, h('th', null, `Au début (${STRESS_NAMES[stress.state].toLowerCase()})`), h('td', null, fmt(stress.start, 0))),
+            h('tr', null, h('th', null, `Trades (${seance.trades.length})`), h('td', null, signed(seance.trades.reduce((sum, t) => sum + (t.stress?.delta ?? 0), 0), 0))),
+            stress.fatigue !== null
+              ? h('tr', null, h('th', null, `Fatigue de fin de séance (poste : ${SETUPS[life.setup].name.toLowerCase()})`), h('td', null, signed(stress.fatigue, 0)))
+              : null,
+            h('tr', { class: 'total' }, h('th', null, 'Maintenant'), h('td', null, fmt(life.stress, 0))),
+          ),
+          stressGauge(life.stress),
+          h(
+            'p',
+            { class: 'muted small' },
+            'Une perte ajoute plus de stress qu’un gain n’en retire (',
+            term('aversion-a-la-perte'),
+            ') et le levier stresse même quand il rapporte. La nuit et les activités de l’entracte le font baisser.',
+          ),
+        )
+      : null;
 
   let observer: ResizeObserver | null = null;
   return {
@@ -109,10 +142,11 @@ export function renderSummary(app: App, run: RunState): View {
           h(
             'table',
             { class: 'trades' },
-            h('tr', null, ['N°', 'Position', 'Cartes', 'Setup', 'P&L net', 'Performance'].map((label) => h('th', null, label))),
+            h('tr', null, ['N°', 'Position', 'Cartes', 'Setup', 'P&L net', 'Performance', ...(stress ? ['Stress'] : [])].map((label) => h('th', null, label))),
             trades,
           ),
         ),
+        stressPanel,
         h(
           'button',
           {
@@ -122,7 +156,7 @@ export function renderSummary(app: App, run: RunState): View {
               app.commit();
             },
           },
-          last ? 'Terminer la run' : 'Aller à la boutique',
+          last ? 'Terminer la run' : run.life ? 'Passer à la soirée' : 'Aller à la boutique',
         ),
       ),
     ),

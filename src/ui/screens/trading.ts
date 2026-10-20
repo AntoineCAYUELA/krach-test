@@ -27,7 +27,7 @@ import { directionSign, type Candle, type Direction } from '../../engine/types.t
 import { fmt, money, pct, signed } from '../../format.ts';
 import type { App, View } from '../app.ts';
 import { candleIndexAt, COLORS, drawChart, type CandleMarker, type ChartLayout, type PriceLine } from '../chart.ts';
-import { attempt, cardView, consumableSlots, DIRECTION_LABELS, errorMessage, progressBar, stat, toolSlots } from '../components.ts';
+import { attempt, cardView, consumableSlots, DIRECTION_LABELS, errorMessage, progressBar, stat, stressGauge, toolSlots } from '../components.ts';
 import { h, toast, type Child } from '../dom.ts';
 import { scanTerms, term } from '../tooltip.ts';
 
@@ -57,6 +57,7 @@ interface PendingTrade {
   playedChecks: CardCheck[];
   performanceBefore: number;
   primesBefore: number;
+  stressBefore: number | null;
   timer: number | null;
 }
 
@@ -185,28 +186,25 @@ export function renderTrading(app: App, run: RunState): View {
   });
   if (!p) previewLines = ticketLines(run, t);
 
+  const stress = run.life ? (p && !done ? p.stressBefore : run.life.stress) : null;
   const values = p && !done
-    ? { capital: p.record.capitalBefore, performance: p.performanceBefore, primes: p.primesBefore, candlesLeft: seance.candlesLeft + duration - p.shown }
-    : { capital: run.capital, performance: seance.performance, primes: run.primes, candlesLeft: seance.candlesLeft };
+    ? { capital: p.record.capitalBefore, performance: p.performanceBefore, primes: p.primesBefore, candlesLeft: seance.candlesLeft + duration - p.shown, stress }
+    : { capital: run.capital, performance: seance.performance, primes: run.primes, candlesLeft: seance.candlesLeft, stress };
 
-  const element = h(
+  const hudEl = hud(app, run, values);
+  const items = h(
     'div',
-    { class: 'screen trading' },
-    hud(app, run, values),
-    h(
-      'div',
-      { class: 'items-bar' },
-      h('div', { class: 'item-group' }, h('span', { class: 'items-label' }, 'Outils'), toolSlots(run)),
-      h('div', { class: 'item-group' }, h('span', { class: 'items-label' }, 'Consommables'), p ? h('div', { class: 'slots muted' }, '…') : consumableSlots(app, run)),
-    ),
-    chartPanel,
-    handPanel,
-    side,
+    { class: 'items-bar' },
+    h('div', { class: 'item-group' }, h('span', { class: 'items-label' }, 'Outils'), toolSlots(run)),
+    h('div', { class: 'item-group' }, h('span', { class: 'items-label' }, 'Consommables'), p ? h('div', { class: 'slots muted' }, '…') : consumableSlots(app, run)),
   );
+  const element = h('div', { class: 'screen trading' }, hudEl, items, chartPanel, handPanel, side);
 
   let observer: ResizeObserver | null = null;
   return {
     element,
+    // Double écran : graphique et main à gauche, ticket d'ordre à droite (GDD 13.5).
+    panes: () => [h('div', { class: 'screen trading trading-main' }, hudEl, items, chartPanel, handPanel), h('div', { class: 'screen trading trading-orders' }, side)],
     mount() {
       draw();
       observer = new ResizeObserver(() => draw());
@@ -226,6 +224,8 @@ interface HudValues {
   performance: number;
   primes: number;
   candlesLeft: number;
+  /** null si la vie du trader est désactivée. */
+  stress: number | null;
 }
 
 function hud(app: App, run: RunState, v: HudValues): HTMLElement {
@@ -257,6 +257,7 @@ function hud(app: App, run: RunState, v: HudValues): HTMLElement {
     stat('Défausses', String(seance.discards)),
     stat(term('chandelier-japonais', 'Bougies'), String(v.candlesLeft)),
     stat('Primes', `${v.primes} P`),
+    v.stress !== null ? stressGauge(v.stress, true) : null,
     h(
       'div',
       { class: 'hud-actions' },
@@ -642,6 +643,7 @@ function openTrade(app: App, run: RunState, t: Ticket, input: PositionInput): vo
   const playedChecks = input.cardIndices.map((i) => checks[i]).filter((c): c is CardCheck => c !== undefined);
   const performanceBefore = seance.performance;
   const primesBefore = run.primes;
+  const stressBefore = run.life?.stress ?? null;
   let record: TradeRecord;
   try {
     record = openPosition(run, input);
@@ -651,7 +653,7 @@ function openTrade(app: App, run: RunState, t: Ticket, input: PositionInput): vo
   }
   t.selected = [];
   hoverIndex = null;
-  pending = { record, shown: 0, playedChecks, performanceBefore, primesBefore, timer: null };
+  pending = { record, shown: 0, playedChecks, performanceBefore, primesBefore, stressBefore, timer: null };
   app.commit();
   scheduleNextCandle(app);
 }
@@ -763,6 +765,7 @@ function tradePanel(app: App, run: RunState, p: PendingTrade, done: boolean): HT
       r.performanceAfter === 0 && r.score.performance < 0 && perfBefore + r.score.performance < 0 ? h('p', { class: 'muted small' }, 'La Performance de séance ne descend jamais sous 0.') : null,
       h('p', null, `Capital : ${money(r.capitalBefore)} → `, h('strong', { class: r.pnlNet >= 0 ? 'gain' : 'loss' }, money(r.capitalAfter))),
       r.primesBonus > 0 ? h('p', null, `+${r.primesBonus} P (Stop-loss discipliné)`) : null,
+      r.stress && p.stressBefore !== null ? stressLine(r, p.stressBefore) : null,
     ),
     h(
       'button',
@@ -775,5 +778,25 @@ function tradePanel(app: App, run: RunState, p: PendingTrade, done: boolean): HT
       },
       continueLabel,
     ),
+  );
+}
+
+/** Stress pris par le trade (GDD 13.2), avec ses causes. */
+function stressLine(r: TradeRecord, before: number): HTMLElement {
+  const stress = r.stress!;
+  const causes: Child[] = [];
+  const leverage = r.trade.order.leverage;
+  if (leverage > CONFIG.life.freeLeverage) causes.push(`levier ×${leverage}`);
+  if (r.pnlNet < 0) causes.push(['perte de ', pct(-r.pnlNet / r.capitalBefore, 1), ' du capital (', term('aversion-a-la-perte', 'une perte pèse plus qu’un gain'), ')']);
+  else if (r.pnlNet > 0) causes.push('trade gagnant');
+  const state = r.stress!.after >= CONFIG.life.tilt.threshold ? 'loss' : r.stress!.after >= CONFIG.life.nervous.threshold ? 'warn' : '';
+  return h(
+    'p',
+    null,
+    `Stress : ${fmt(before, 0)} → `,
+    h('strong', { class: state }, fmt(stress.after, 0)),
+    ` (${stress.delta >= 0 ? '+' : '−'}${fmt(Math.abs(stress.delta), 0)}${causes.length > 0 ? ' : ' : ''}`,
+    causes.map((c, i) => [i > 0 ? ', ' : '', c]),
+    ')',
   );
 }

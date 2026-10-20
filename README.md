@@ -18,12 +18,14 @@ Roguelike de cartes façon Balatro sur le thème du trading. On lit un graphique
 - Score : Résultat = 5 × cartes valides + P&L net. La Performance vaut Résultat × Multi si elle est positive, et Résultat × 0,5 si elle est négative. Une confluence de familles différentes vaut plus qu'un signal isolé.
 - Le capital est conservé d'une séance à l'autre. Sous 10 $, c'est le margin call.
 - Entre deux séances, la boutique vend des Outils (15, avec des synergies) et des consommables (6).
+- Vie du trader (GDD 13) : une jauge de stress monte avec les pertes, le levier et la fatigue. Nerveux dès 50 (Multi ×0,8), tilt dès 80 (Multi ×0,6). Le soir, l'entracte verse un salaire en € sur une épargne séparée du capital. Elle paie des activités (soirée, spa, week-end, voyage), un meilleur poste (portable, PC tour, double écran) et un meilleur logement (studio, T2, loft). Le voyage remet le stress à 0 mais saute la boutique, et le briefing suivant résume le marché manqué.
+- Vue à la première personne : sur un écran d'au moins 1 100 × 740 px, le jeu s'affiche dans l'écran du poste, posé sur un bureau, devant la fenêtre du logement. L'option Décor l'enlève.
 - Chaque terme de trading affiché à l'écran est souligné. À sa première apparition, sa définition s'ouvre. Le glossaire complet s'ouvre avec la touche G.
 
 ## Stack et architecture
 
 - Vite + TypeScript strict, sans framework : DOM et CSS natifs. Le graphique est dessiné en Canvas 2D par le code du projet. Le projet n'a aucune dépendance d'exécution.
-- Tests : Vitest pour le moteur (100 tests), Playwright pour un test de fumée dans un vrai navigateur.
+- Tests : Vitest pour le moteur (119 tests), Playwright pour un test de fumée dans un vrai navigateur.
 - Hébergement : GitHub Pages, publié par GitHub Actions.
 
 ```
@@ -36,12 +38,15 @@ src/
     cards.ts       conditions de validité des 14 cartes Signal
     trade.ts       résolution d'une position : stop-loss, liquidation, take-profit
     scoring.ts     formule de score et multiplicateurs
-    run.ts         machine à états de la run et de la séance, Outils, consommables
+    run.ts         machine à états de la run et de la séance, Outils, consommables, entracte
     shop.ts        boutique
-  data/            textes : Outils, consommables, événements, glossaire
-  ui/              un module par écran, plus chart.ts (Canvas) et tooltip.ts
+    life.ts        stress, épargne, poste et logement (GDD 13)
+    review.ts      revue de marché affichée au retour d'un voyage
+  data/            textes : Outils, consommables, événements, glossaire, activités
+  ui/              un module par écran, plus chart.ts (Canvas), tooltip.ts et scene.ts (décor)
   sim/bot.ts       robot naïf pour l'équilibrage
 scripts/sim.ts     5 000 runs par construction d'Outils, comparées au GDD
+scripts/sim-stress.ts  effet du stress et des dépenses d'entracte (GDD 13.7)
 tests/             tests unitaires (dont l'exemple chiffré du GDD rejoué à 1e-6 près)
 e2e/               test de fumée Playwright
 docs/              game design document, décisions, avancement
@@ -59,6 +64,7 @@ npm run dev      # jeu sur http://localhost:5173
 npm test         # tests unitaires
 npm run e2e      # test de fumée (Playwright, Chromium)
 npm run sim      # simulation d'équilibrage (environ 15 s)
+npm run sim:stress  # simulation de la vie du trader (GDD 13.7)
 npm run build    # vérification TypeScript et build de production dans dist/
 ```
 

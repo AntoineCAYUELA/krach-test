@@ -2,6 +2,7 @@
 // mise à jour de la Performance et du capital, puis fin de la séance.
 import { expect, test, type Page } from '@playwright/test';
 import { GLOSSARY } from '../src/data/glossary.ts';
+import { beginSeance, createRun, finishSummary, passCandle } from '../src/engine/run.ts';
 
 const SEED = '12345';
 
@@ -72,8 +73,8 @@ test('partie à graine fixe : un trade met à jour le capital et la Performance,
   await openBestPosition(page);
   const breakdown = page.locator('.ticket.trade .breakdown');
   await expect(breakdown).toBeVisible();
-  const capitalLine = (await page.locator('.ticket.trade .after p', { hasText: 'Capital' }).textContent()) ?? '';
-  const performanceLine = (await page.locator('.ticket.trade .after p', { hasText: 'Performance de séance' }).textContent()) ?? '';
+  const capitalLine = (await page.locator('.ticket.trade .after p', { hasText: /^Capital :/ }).textContent()) ?? '';
+  const performanceLine = (await page.locator('.ticket.trade .after p', { hasText: /^Performance de séance/ }).textContent()) ?? '';
   const capitalAfter = parseNumber(capitalLine.split('→')[1] ?? '');
   const performanceAfter = parseNumber((performanceLine.split('→')[1] ?? '').split('/')[0] ?? '');
 
@@ -102,6 +103,59 @@ test('partie à graine fixe : un trade met à jour le capital et la Performance,
   const saved = await page.evaluate(() => localStorage.getItem('krach-test/run'));
   if (ended.startsWith('Séance')) expect(saved).not.toBeNull();
   else expect(saved).toBeNull();
+
+  // Séance réussie : soirée (entracte), puis boutique.
+  if (ended.startsWith('Séance')) {
+    await page.getByRole('button', { name: 'Passer à la soirée' }).click();
+    await expect(page.getByRole('heading', { name: 'Soirée', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Aller à la boutique' }).click();
+    await expect(page.locator('.topbar-title')).toHaveText('Boutique');
+  }
+
+  expect(errors).toEqual([]);
+});
+
+test('entracte avec décor : amélioration du poste, voyage, revue de marché au briefing', async ({ page }) => {
+  const errors: string[] = [];
+  page.on('pageerror', (error) => errors.push(error.message));
+  await page.setViewportSize({ width: 1536, height: 864 });
+
+  // Run sauvegardée à l'entracte qui suit la séance 1, avec 300 € d'épargne.
+  const run = createRun(Number(SEED));
+  beginSeance(run);
+  run.seance!.quota = 0;
+  passCandle(run);
+  finishSummary(run);
+  run.life!.savings = 300;
+  await page.addInitScript((saved) => {
+    if (sessionStorage.getItem('entracte-init')) return;
+    sessionStorage.setItem('entracte-init', '1');
+    localStorage.setItem('krach-test/run', saved);
+    localStorage.setItem('krach-test/onboarded', 'true');
+  }, JSON.stringify(run));
+
+  await page.goto('/');
+  await page.getByRole('button', { name: /Continuer/ }).click();
+  await expect(page.getByRole('heading', { name: 'Soirée', exact: true })).toBeVisible();
+  await expect(page.locator('.scene.evening.setup-laptop.home-studio')).toBeVisible();
+
+  // Le PC tour remplace l'ordinateur portable.
+  await page.getByRole('button', { name: 'Acheter (100 €)' }).click();
+  await page.locator('.modal').getByRole('button', { name: 'Acheter' }).click();
+  await expect(page.locator('.scene.setup-tower')).toBeVisible();
+
+  // Voyage : une seule activité, puis pas de boutique.
+  await page.getByRole('button', { name: 'Choisir (150 €)' }).click();
+  await page.getByRole('button', { name: 'Réserver le voyage' }).click();
+  await expect(page.getByText('✔ Choisie')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Choisir (20 €)' })).toBeDisabled();
+  await expect(page.locator('.topbar .savings')).toHaveText('Épargne 50 €');
+  await page.getByRole('button', { name: /Partir en voyage/ }).click();
+
+  await expect(page.getByRole('heading', { name: /Pendant ton voyage/ })).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Séance 2 sur 8/ })).toBeVisible();
+  await page.getByRole('button', { name: 'Commencer la séance' }).click();
+  await expect(page.locator('.device-tower .hud .stress-gauge')).toBeVisible();
 
   expect(errors).toEqual([]);
 });

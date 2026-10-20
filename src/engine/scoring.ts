@@ -2,6 +2,7 @@
 
 import { CONFIG } from '../config.ts';
 import { CARDS } from './cards.ts';
+import { STRESS_NAMES, stressMultiFactor, type StressState } from './life.ts';
 import type { CardFamily, CardId, Direction, SetupType, ToolId } from './types.ts';
 
 export const SETUP_NAMES: Record<SetupType, string> = {
@@ -62,6 +63,8 @@ export interface MultiInput {
   journalBonus: number;
   /** Bonus permanent de Formation pour ce type de setup. */
   formationBonus: number;
+  /** État de stress de la séance (GDD 13.2) ; absent si la vie du trader est désactivée. */
+  stressState?: StressState;
 }
 
 /** Multi total = (Multi de setup + somme des bonus additifs) × produit des bonus multiplicatifs. */
@@ -86,6 +89,8 @@ export function computeMulti(input: MultiInput): MultiBreakdown {
   if (has('twoPercentRule') && input.twoPercentOk) terms.push({ label: 'Règle des 2 %', kind: 'mul', value: T.twoPercentRule.multiFactor });
   if (has('quantAnalyst') && input.setup.families.length >= T.quantAnalyst.minFamilies)
     terms.push({ label: 'Analyste quant', kind: 'mul', value: T.quantAnalyst.multiFactor });
+  if (input.stressState && input.stressState !== 'calm')
+    terms.push({ label: `Stress : ${STRESS_NAMES[input.stressState].toLowerCase()}`, kind: 'mul', value: stressMultiFactor(input.stressState) });
 
   const additive = terms.filter((t) => t.kind === 'add').reduce((sum, t) => sum + t.value, 0);
   const factor = terms.filter((t) => t.kind === 'mul').reduce((prod, t) => prod * t.value, 1);

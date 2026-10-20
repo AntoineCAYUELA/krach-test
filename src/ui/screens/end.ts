@@ -4,8 +4,9 @@
 
 import { CONFIG } from '../../config.ts';
 import { GLOSSARY } from '../../data/glossary.ts';
+import { HOMES, SETUPS } from '../../data/life.ts';
 import type { RunState } from '../../engine/run.ts';
-import { fmt, money, pct, signed } from '../../format.ts';
+import { euros, fmt, money, pct, signed } from '../../format.ts';
 import type { App, View } from '../app.ts';
 import { DIRECTION_LABELS, stat, topBar } from '../components.ts';
 import { h, type Child } from '../dom.ts';
@@ -77,6 +78,9 @@ export function renderEnd(app: App, run: RunState): View {
               run.bestTrade ? `${signed(run.bestTrade.pnlNet)} $ (${DIRECTION_LABELS[run.bestTrade.direction]}, séance ${run.bestTrade.seance + 1})` : '—',
             ),
           ),
+          run.life
+            ? h('p', { class: 'muted' }, `Vie du trader : stress ${fmt(run.life.stress, 0)}, épargne ${euros(run.life.savings)}, ${SETUPS[run.life.setup].name.toLowerCase()}, ${HOMES[run.life.home].name}.`)
+            : null,
           h('p', null, 'Graine de la run : ', h('strong', { class: 'seed-value' }, String(run.seed)), h('span', { class: 'muted' }, ' (la même graine redonne les mêmes marchés)')),
           h(
             'div',

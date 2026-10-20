@@ -1,9 +1,9 @@
 # Krach Test — Game Design Document (MVP)
 
-*Titre provisoire. Version 1.1 du 19/10/2026. Cible technique : navigateur, HTML/CSS/TypeScript, sans serveur.*
+*Titre provisoire. Version 1.2 du 20/10/2026 (ajout de la section 13, la vie du trader). Cible technique : navigateur, HTML/CSS/TypeScript, sans serveur.*
 
 Conventions du document :
-- **$** = argent du compte de trading (capital). **P** = Primes, la monnaie de la boutique.
+- **$** = argent du compte de trading (capital). **P** = Primes, la monnaie de la boutique. **€** = épargne personnelle (section 13).
 - Les pourcentages de prix sont relatifs au prix d'entrée. Les termes en *italique* sont définis au glossaire (section 10).
 
 ---
@@ -369,6 +369,7 @@ Lecture : sans Outil rare, les séances 1-2 passent au moins 3 fois sur 4 ; les 
 | Analyse quantitative | Approche qui prend des décisions à partir de règles chiffrées et de statistiques plutôt que de l'intuition. |
 | Analyse technique | Étude des graphiques de prix et de volume pour tenter d'anticiper les mouvements. Son efficacité réelle est débattue. |
 | Avalement (engulfing) | Figure de deux bougies où le corps de la seconde englobe celui de la première, en sens inverse. Signale un possible retournement. |
+| Aversion à la perte | Biais psychologique : une perte fait plus mal qu'un gain du même montant ne fait plaisir, environ deux fois plus selon les travaux de Kahneman et Tversky. Elle pousse souvent à garder trop longtemps les positions perdantes. |
 | Bear market | Marché baissier : les prix baissent durablement. |
 | Bid / Ask | Bid : meilleur prix auquel on peut vendre. Ask : meilleur prix auquel on peut acheter. L'ask est toujours au-dessus du bid. |
 | Bull market | Marché haussier : les prix montent durablement. |
@@ -409,6 +410,8 @@ Lecture : sans Outil rare, les séances 1-2 passent au moins 3 fois sur 4 ; les 
 | Régime de marché | État général du marché à un moment donné : haussier, baissier ou sans tendance. |
 | Séance | Période d'ouverture de la bourse pendant laquelle on peut trader. Dans le jeu, une manche de 24 bougies. |
 | Résistance | Zone de prix où la hausse a déjà été stoppée plusieurs fois. |
+| Revenge trading | Trade ouvert pour « se refaire » juste après une perte, souvent plus gros et sans vrai signal. Il aggrave en général les pertes. |
+| Revue de marché | Résumé de ce qui s'est passé sur un marché pendant une période : variation du cours, plus haut, plus bas, tendance, indicateurs et news. |
 | Risque de perte | Le trading réel fait perdre de l'argent à la majorité des particuliers : en Europe, les courtiers doivent afficher la part de clients perdants sur les CFD, souvent entre 70 % et 80 %. Ce jeu est un entraînement, il ne prouve pas qu'on sait gagner sur un vrai marché. |
 | RSI (Relative Strength Index) | Indicateur de 0 à 100 qui compare hausses et baisses récentes. Au-dessus de 70 : surachat ; en dessous de 30 : survente. |
 | Scalping | Style de trading fait de nombreuses positions très courtes visant de petits gains. |
@@ -422,6 +425,7 @@ Lecture : sans Outil rare, les séances 1-2 passent au moins 3 fois sur 4 ; les 
 | Take-profit | Ordre qui ferme automatiquement une position quand le gain atteint un niveau fixé. |
 | Taille de position | Montant engagé dans un trade, calculé pour que la perte au stop-loss reste dans la limite de risque choisie. |
 | Teneur de marché (market maker) | Acteur qui propose en permanence un prix d'achat et de vente, et se rémunère sur le spread. |
+| Tilt | Mot venu du poker : état de frustration après des pertes, où l'on prend des décisions impulsives. Un trader en tilt devrait arrêter et faire une pause. |
 | Trade / trader | Un trade est une opération d'achat puis de vente (ou l'inverse) ; un trader est la personne qui les réalise. |
 | Tendance | Direction générale du prix sur plusieurs bougies. |
 | Volatilité | Ampleur moyenne des variations de prix. Plus elle est forte, plus les gains et les pertes possibles sont grands. |
@@ -470,6 +474,170 @@ Lecture : sans Outil rare, les séances 1-2 passent au moins 3 fois sur 4 ; les 
 
 ---
 
+## 13. Addendum : la vie du trader (v1.2)
+
+Demandé par Antoine le 20/10/2026 : vue à la première personne devant un poste qui évolue (ordinateur portable, puis PC tour, puis double écran), appartement qui s'améliore, taux de stress à gérer, activités pour se détendre avec une revue de marché au retour d'un long voyage.
+
+Principe : un joueur qui gère son stress joue à la difficulté calibrée en 7.3 ; un joueur qui l'ignore perd jusqu'à la moitié de ses chances de victoire. Le capital, les Primes et les quotas ne changent pas.
+
+### 13.1 Nouvelles ressources
+
+| Ressource | Départ | Persistance | Rôle |
+|---|---|---|---|
+| Stress | 15 sur 100 | Toute la run | Au-delà de 50, il réduit le Multi (13.2). |
+| Épargne (€) | 60 € | Toute la run | Argent personnel : paie le poste, le logement et les activités. Ne sert jamais à trader. |
+| Salaire | 60 € | Après chaque séance réussie | Fixe, versé par ta société de trading. |
+| Poste | Ordinateur portable | Toute la run | Réduit le stress pris pendant les séances (13.4). |
+| Logement | Studio | Toute la run | Fait récupérer entre deux séances (13.4). |
+
+Trois caisses séparées : le capital ($) pour trader, les Primes (P) pour les Outils, l'épargne (€) pour ta vie. Comme dans la réalité, l'argent du loyer et des loisirs ne va jamais sur le compte de trading, et une perte de trading ne vide jamais l'épargne.
+
+### 13.2 Le stress
+
+**Ce qui le fait monter ou baisser :**
+
+| Cause | Variation |
+|---|---|
+| Trade perdant | +3, plus 1,5 par % du capital perdu |
+| Liquidation | +25 en plus |
+| Trade gagnant | −2 |
+| Levier au-delà de ×2, gagnant ou perdant | +3 par cran, par trade (×5 : +9) |
+| Fin de séance (fatigue) | +10 |
+| Début d'une séance à événement | +10 |
+| Nuit au logement, à l'entracte | −10 à −30 selon le logement |
+| Activité, à l'entracte | −15 à remise à 0 (13.3) |
+
+- Un trade donne une seule variation : levier + perte (ou gain). Si elle est positive, on la multiplie par le facteur du poste. La fatigue de fin de séance est aussi multipliée par ce facteur.
+- Chaque variation est arrondie à l'entier. Le stress reste entre 0 et 100.
+- Une perte ajoute nettement plus de stress qu'un gain du même montant n'en retire : c'est l'*aversion à la perte*. Le levier stresse même quand on gagne.
+
+**Exemple.** Avec un PC tour (×0,8), un trade à levier ×5 qui perd 4 % du capital : (3 + 1,5 × 4 + 9) × 0,8 = 14,4, arrondi à **+14**. Le même trade gagnant : (9 − 2) × 0,8 = 5,6, arrondi à **+6**.
+
+**Effets.** L'état est fixé au début de chaque séance, après le +10 éventuel de l'événement, et vaut pour toute la séance. Le stress continue de bouger pendant la séance : il comptera pour la suivante.
+
+| État | Stress | Effet pendant la séance |
+|---|---|---|
+| Calme | 0 à 49 | Aucun. |
+| Nerveux | 50 à 79 | Multi de chaque trade ×0,8. |
+| Tilt | 80 à 100 | Multi de chaque trade ×0,6. |
+
+Le malus apparaît comme une ligne du calcul du Multi (« Stress : nerveux ×0,8 »), au même titre qu'un Outil multiplicatif. Il ne touche pas les trades perdants, qui n'ont pas de Multi (5.1). Le Multi mesure la qualité de la décision (section 3) : sous stress, on décide moins bien. En *tilt*, on fait du *revenge trading*.
+
+### 13.3 L'entracte (nouvel écran entre le bilan et la boutique)
+
+Ordre après une séance réussie : bilan (avec le détail du stress de la séance), entracte, boutique, briefing, séance. Pas d'entracte après la séance 8.
+
+À l'entracte, dans l'ordre :
+1. Le salaire est versé : +60 €.
+2. La nuit au logement fait baisser le stress.
+3. Le joueur choisit **une activité au plus** et achète autant d'améliorations de poste et de logement que son épargne le permet.
+
+| Activité | Prix | Stress | Particularité |
+|---|---|---|---|
+| Soirée entre amis | 20 € | −15 | — |
+| Spa | 50 € | −30 | — |
+| Week-end entre amis | 90 € | −50 | — |
+| Voyage | 150 € | remis à 0 | Pas de boutique cette fois (les Primes sont gardées). Au retour, le briefing commence par une *revue de marché* (13.6). |
+
+Le Voyage est le seul moyen de sortir du tilt en un entracte. Il coûte une visite à la boutique, donc un Outil de retard.
+
+### 13.4 Poste et logement
+
+Améliorations permanentes, achetées dans l'ordre, l'une après l'autre. Elles jouent le rôle des Bons (vouchers) de Balatro.
+
+| Poste | Prix | Stress pris en séance |
+|---|---|---|
+| Ordinateur portable | départ | ×1 |
+| PC tour | 100 € | ×0,8 |
+| Double écran | 200 € | ×0,6 |
+
+| Logement | Prix | Récupération par nuit |
+|---|---|---|
+| Studio | départ | −10 |
+| T2 | 120 € | −20 |
+| Loft | 250 € | −30 |
+
+Tout acheter coûte 670 €, alors que l'épargne atteint au plus 480 € avant la séance 8 (60 € de départ et 7 salaires) : il faut choisir.
+
+### 13.5 La vue à la première personne
+
+Le joueur est assis à son bureau, chez lui. L'écran de trading s'affiche **dans l'écran de son poste** :
+- **Ordinateur portable** : l'interface est dans l'écran du portable, avec le haut du clavier en bas de la vue.
+- **PC tour** : un moniteur plus grand, la tour posée à côté.
+- **Double écran** : le graphique sur l'écran de gauche ; la main, le ticket d'ordre et les Outils sur celui de droite.
+
+Autour du poste, on voit le logement : studio (petite fenêtre sur une cour), T2 (plante, lampe, plus de lumière), loft (grande baie vitrée sur les toits de Lyon). Le bureau montre le stress : tasses de café et post-its quand on est nerveux, bord de l'écran rougi en tilt. Aucune animation clignotante ou tremblante. Le briefing et l'entracte utilisent le même décor, l'entracte en lumière du soir.
+
+L'option « Décor » est activée par défaut ; désactivée, l'interface s'affiche seule, en plein écran. Le décor se masque aussi automatiquement quand la fenêtre fait moins de 1 100 × 740 px, pour garder l'interface lisible.
+
+Nouvel élément de la barre d'état (écran 4) : jauge de stress de 0 à 100 avec l'état de la séance (« Stress 62 · Nerveux »).
+
+### 13.6 Revue de marché après un voyage
+
+Calculée sur les 40 bougies d'historique de l'action de la séance suivante, affichée en tête du briefing :
+
+> **Pendant ton voyage : Nexacorp (NXC)**
+> - Le cours est passé de 48,20 $ à 52,10 $ (+8,1 %).
+> - Plus haut 53,40 $, plus bas 47,90 $.
+> - Tendance haussière : la MM5 est au-dessus de la MM20.
+> - RSI 14 à 68 : proche du surachat.
+> - 1 news : « NXC : prévisions annuelles revues à la hausse » (gap de +4,2 %).
+
+Chaque ligne reprend un terme du glossaire. Le joueur apprend à résumer un graphique avant de trader.
+
+### 13.7 Vérification de l'équilibrage
+
+Commande : `node scripts/sim-stress.ts 3000`, qui fait tourner le moteur du jeu avec les règles de cette section. Même robot naïf qu'en 7.3. Il ne regarde pas son stress pendant la séance ; à l'entracte, il suit une politique fixe. Contraintes simulées comme en 7.3. Taux de réussite par séance (parmi les runs qui l'atteignent), 3 000 runs par ligne :
+
+| Construction | Politique | S3 | S4 | S5 | S6 | S7 | S8 | Victoires |
+|---|---|---|---|---|---|---|---|---|
+| Aucun Outil | Sans le système (rappel 7.3) | 77 % | 70 % | 48 % | 22 % | 18 % | — * | 0,2 % |
+| | Stress ignoré | 76 % | 66 % | 40 % | 15 % | 8 % | — * | 0,0 % |
+| | Activités | 77 % | 70 % | 48 % | 22 % | 19 % | — * | 0,2 % |
+| Communs seulement | Sans le système | 79 % | 72 % | 56 % | 32 % | 25 % | — * | 0,5 % |
+| | Stress ignoré | 77 % | 68 % | 48 % | 24 % | 24 % | — * | 0,2 % |
+| | Activités | 79 % | 72 % | 56 % | 32 % | 25 % | — * | 0,5 % |
+| Synergies (levier ×5 dès S5) | Sans le système | 78 % | 73 % | 73 % | 62 % | 63 % | 68 % | 7,5 % |
+| | Stress ignoré | 76 % | 69 % | 67 % | 49 % | 51 % | 53 % | 3,2 % |
+| | Activités | 78 % | 73 % | 73 % | 59 % | 62 % | 65 % | 7,0 % |
+| | Logement, puis activités | 78 % | 73 % | 73 % | 61 % | 62 % | 67 % | 7,5 % |
+| | Poste, puis activités | 78 % | 73 % | 73 % | 60 % | 62 % | 66 % | 7,2 % |
+| | Voyage dès 70 de stress | 78 % | 73 % | 70 % | 59 % | 61 % | 67 % | 6,6 % |
+
+\* Moins de 60 runs atteignent la séance 8 : taux non fiable.
+
+Politiques : « Activités » = à chaque entracte, si le stress est à 40 ou plus, l'activité la moins chère qui le ramène sous 40 (sinon la plus forte abordable), sans Voyage. « Logement, puis activités » et « Poste, puis activités » = en plus, une amélioration par entracte dès que l'épargne suffit et que le stress est sous 40.
+
+Lecture :
+- Stress ignoré, toutes les constructions sont nerveuses à la séance 4 dans plus d'une run sur deux. Avec le levier ×5, le stress moyen atteint 85 à la séance 6 et 98 à la séance 8 (tilt dans 96 % des runs) ; les victoires passent de 7,5 % à 3,2 %.
+- Une activité au bon moment suffit presque à revenir au niveau de 7.3 (7,0 % de victoires). Le logement acheté tôt fait aussi bien que sans le système (7,5 %) et garde le stress moyen entre 22 et 37 de S3 à S8, contre 29 à 44 avec les activités seules.
+- Le Voyage coûte un peu (6,6 % de victoires contre 7,0 % avec les activités) parce qu'il fait sauter une boutique.
+- Limite : le robot dépense peu (30 à 60 € d'activités par run, 120 à 165 € avec le confort). L'épargne est donc large pour lui. Le salaire et les prix sont à revoir après les premiers tests humains.
+
+### 13.8 Ce que le joueur apprend
+
+1. Une perte pèse plus qu'un gain (*aversion à la perte*) : la jauge le montre trade après trade.
+2. Le levier stresse même quand il rapporte : c'est un coût caché du levier, en plus de la *liquidation*.
+3. Le *tilt* dégrade la qualité des décisions ; le *revenge trading* aggrave les pertes.
+4. Le repos fait partie de la performance.
+5. L'argent personnel et le capital de trading se gardent séparés.
+6. Une *revue de marché* résume un graphique en quelques chiffres avant de décider.
+
+### 13.9 Simplifications
+
+1. Le stress réel ne se mesure pas sur 100 et ses effets varient d'une personne à l'autre. Le jeu le réduit à une jauge et deux paliers.
+2. Le facteur d'aversion à la perte du jeu illustre le biais, il ne le mesure pas. En laboratoire, une perte pèse environ deux fois plus qu'un gain du même montant.
+3. Un trader salarié ne paie pas son poste de travail. Ici, c'est le bureau à domicile du joueur.
+4. Le salaire ne dépend pas des résultats : la part variable reste la Prime.
+
+### 13.10 Choix pris par défaut (à confirmer par Antoine)
+
+1. **Épargne en € séparée** pour la vie perso. Écartés : payer en Primes (le confort entrerait en concurrence avec les Outils, indispensables) ; payer en capital (le capital ne varie que du P&L net, section 4).
+2. **Effets du stress fixés au début de la séance**, pour une règle prévisible. Écarté pour l'instant : un état qui change en direct, avec « Passer 1 bougie » qui fait souffler (−3). Plus riche contre le revenge trading, mais plus punitif en fin de séance.
+3. **Interface affichée dans l'écran du poste**, avec l'option « Décor » pour l'enlever.
+
+---
+
 ## Questions ouvertes
 
 Les 5 choix de la version 1.0 ont été tranchés par Antoine le 19/10/2026 ; ce document les applique :
@@ -479,5 +647,7 @@ Les 5 choix de la version 1.0 ont été tranchés par Antoine le 19/10/2026 ; ce
 3. **Validité des cartes toujours affichée** (✔/✘ avec raison) pendant toute la partie. Le masquage reste réservé au futur mode expert.
 4. **Capital persistant sans renflouement** entre les séances.
 5. **Crypto débloquée par la méta-progression** (run suivante, après avoir atteint la séance 5).
+
+Section 13 : les 3 choix pris par défaut sont listés en 13.10 et attendent la confirmation d'Antoine.
 
 Aucune question ouverte ne bloque le prototype. Les quotas restent à ajuster après les premiers tests de jeu humains.

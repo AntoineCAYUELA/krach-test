@@ -1337,3 +1337,392 @@ button.card:hover {
 .ticket.trade .primary {
   padding: 10px;
 }
+
+/* --- Vie du trader (GDD 13) : stress, entracte, revue de marché */
+
+.warn {
+  color: var(--orange);
+}
+
+.stress-gauge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 130px;
+}
+
+.stress-bar {
+  position: relative;
+  height: 6px;
+  background: var(--bg);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.stress-fill {
+  height: 100%;
+  background: var(--up);
+}
+
+.stress-nervous .stress-fill {
+  background: var(--orange);
+}
+
+.stress-tilt .stress-fill {
+  background: var(--down);
+}
+
+.stress-nervous > .stat-value {
+  color: var(--orange);
+}
+
+.stress-tilt > .stat-value {
+  color: var(--down);
+}
+
+.stress-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--muted);
+  opacity: 0.7;
+}
+
+.stress-gauge.compact {
+  min-width: 110px;
+}
+
+.stress-gauge.compact .stat-value {
+  font-size: 13px;
+}
+
+.topbar-life {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.savings {
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stress-box {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 12px;
+  margin: 10px 0;
+  border-radius: var(--radius);
+  background: var(--panel-2);
+  border-left: 3px solid var(--up);
+}
+
+.stress-box p {
+  margin: 0;
+}
+
+.stress-box.stress-nervous {
+  border-left-color: var(--orange);
+}
+
+.stress-box.stress-tilt {
+  border-left-color: var(--down);
+}
+
+.offers.activities {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+.offer.chosen {
+  border-color: var(--up);
+}
+
+.offer.upgrade p {
+  margin-bottom: 0.4em;
+}
+
+.rules ul,
+.review ul {
+  margin: 0;
+  padding-left: 20px;
+}
+
+.rules li,
+.review li {
+  margin-bottom: 4px;
+}
+
+.review {
+  border-color: var(--info);
+}
+
+.dashboard {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+}
+
+.dashboard .slots {
+  flex-wrap: wrap;
+}
+
+/* --- Vue à la première personne (GDD 13.5) : logement, bureau, poste */
+
+.scene {
+  --wall: #1c2029;
+  --wall-2: #252a36;
+  --desk: #3b2f27;
+  --desk-edge: #54443a;
+  --desk-h: 46px;
+  position: relative;
+  height: 100vh;
+  overflow: hidden;
+  background: linear-gradient(var(--wall), var(--wall-2));
+}
+
+.scene.home-t2 {
+  --wall: #1f2c38;
+  --wall-2: #2a3a48;
+  --desk: #4b3726;
+  --desk-edge: #6a4f38;
+}
+
+.scene.home-loft {
+  --wall: #2a2524;
+  --wall-2: #352d2a;
+  --desk: #5a4130;
+  --desk-edge: #7a5a42;
+}
+
+.scene.evening::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(8, 10, 30, 0.38);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.scene-side {
+  position: absolute;
+  top: 0;
+  bottom: var(--desk-h);
+  width: calc((100vw - var(--device-w)) / 2);
+  overflow: hidden;
+}
+
+.scene-left {
+  left: 0;
+}
+
+.scene-right {
+  right: 0;
+}
+
+.scene-side > div,
+.scene-side svg {
+  width: 100%;
+  height: 100%;
+}
+
+.scene-window,
+.scene-wall {
+  padding: 24px 10% 0;
+}
+
+.home-loft .scene-window,
+.home-loft .scene-wall {
+  padding: 0;
+}
+
+.desk {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: var(--desk-h);
+  background: linear-gradient(var(--desk-edge) 0 4px, var(--desk) 4px);
+}
+
+.desk-props {
+  position: absolute;
+  bottom: 12px;
+  height: 90px;
+  width: calc((100vw - var(--device-w)) / 2 - 8px);
+  max-width: 220px;
+}
+
+.desk-props svg {
+  width: 100%;
+  height: 100%;
+}
+
+.desk-left {
+  left: 4px;
+}
+
+.desk-right {
+  right: 4px;
+}
+
+.lamp-glow {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 40vw;
+  height: 60vh;
+  background: radial-gradient(ellipse at 90% 100%, rgba(255, 196, 110, 0.28), transparent 65%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+.device {
+  position: absolute;
+  top: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: var(--device-w);
+  z-index: 3;
+  display: flex;
+}
+
+/* Chaque poste est au moins aussi grand que le précédent, quelle que soit la fenêtre. */
+.scene.setup-laptop {
+  --device-w: min(1120px, calc(100vw - 60px));
+}
+
+.scene.setup-tower {
+  --device-w: min(1320px, calc(100vw - 60px));
+}
+
+/* Deux moniteurs, avec assez de marge pour voir le logement sur un grand écran. */
+.scene.setup-dualScreen {
+  --device-w: max(calc(100vw - 180px), min(calc(100vw - 40px), 1240px));
+}
+
+.device-laptop {
+  bottom: 6px;
+  flex-direction: column;
+  align-items: center;
+}
+
+.device-tower,
+.device-dual {
+  bottom: calc(var(--desk-h) - 14px);
+  gap: 14px;
+}
+
+.device-frame {
+  flex: 1;
+  min-height: 0;
+  width: 100%;
+  display: flex;
+  background: var(--bg);
+  border: 8px solid #12151b;
+  border-radius: 10px;
+  box-shadow: 0 0 0 1px #2c313c, 0 12px 30px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.device-laptop .device-frame {
+  border-width: 8px 8px 10px;
+  border-radius: 12px 12px 4px 4px;
+}
+
+.stress-tilt .device-frame {
+  box-shadow: 0 0 0 2px rgba(239, 83, 80, 0.7), 0 0 34px rgba(239, 83, 80, 0.35);
+}
+
+.device-screen {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.laptop-base {
+  width: 108%;
+  height: 22px;
+  flex: none;
+  background: linear-gradient(#3a3f4a, #20242c);
+  clip-path: polygon(0 0, 100% 0, 97% 100%, 3% 100%);
+  border-radius: 0 0 10px 10px;
+}
+
+.monitor {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.monitor-main {
+  flex: 1.8;
+}
+
+.monitor-stand {
+  width: 120px;
+  height: 18px;
+  flex: none;
+  background: linear-gradient(#2a2e37, #15181e);
+  clip-path: polygon(30% 0, 70% 0, 100% 100%, 0 100%);
+}
+
+/* L'interface prend la taille de l'écran du poste au lieu de celle de la fenêtre. */
+.device-screen > .screen {
+  min-height: 100%;
+}
+
+.device-screen > .trading {
+  height: 100%;
+  min-height: 660px;
+}
+
+.device-screen .hud {
+  gap: 12px;
+}
+
+.device-screen .hud-actions button {
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.device-screen .slot.empty,
+.device-screen .hud .stat-value {
+  white-space: nowrap;
+}
+
+.device-screen .slots {
+  flex-wrap: wrap;
+}
+
+.device-screen .hand {
+  flex-wrap: nowrap;
+}
+
+.device-screen .hand .card {
+  flex: 1 1 0;
+  width: auto;
+  max-width: 172px;
+  min-width: 0;
+}
+
+.device-screen > .trading-main {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  grid-template-areas: 'hud' 'items' 'chart' 'hand';
+}
+
+.device-screen > .trading-orders {
+  display: flex;
+}
+
+.device-screen > .trading-orders > .ticket {
+  flex: 1;
+  border-left: none;
+}
