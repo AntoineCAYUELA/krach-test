@@ -4,7 +4,8 @@
 import { CONFIG } from '../config.ts';
 import { CONSUMABLES } from '../data/consumables.ts';
 import { RARITY_NAMES, TOOLS } from '../data/tools.ts';
-import { CARDS, FAMILY_NAMES, type CardCheck } from '../engine/cards.ts';
+import { CARDS, FAMILY_NAMES, ROLE_NAMES, type CardCheck } from '../engine/cards.ts';
+import type { CardBonus } from '../engine/forecast.ts';
 import { STRESS_NAMES, stressState } from '../engine/life.ts';
 import { canUseConsumable, GameError, signalPackOffers, useConsumable, type RunState } from '../engine/run.ts';
 import { SETUP_NAMES, SETUP_TYPES } from '../engine/scoring.ts';
@@ -92,7 +93,7 @@ export function topBar(app: App, title: Child, run: RunState | null): HTMLElemen
     h(
       'div',
       { class: 'topbar-actions' },
-      run ? h('span', { class: 'seed', title: 'Graine de la run : rejoue exactement les mêmes marchés' }, `Graine ${run.seed}`) : null,
+      run ? h('span', { class: 'seed', title: 'Graine de la run : chaque séance démarre sur le même marché' }, `Graine ${run.seed}`) : null,
       h('button', { class: 'ghost', onClick: () => app.toggleGlossary() }, 'Glossaire (G)'),
       h('button', { class: 'ghost', onClick: () => app.openOptions() }, 'Options'),
       h('button', { class: 'ghost', onClick: () => app.quitToTitle() }, 'Menu'),
@@ -106,14 +107,23 @@ export function topBar(app: App, title: Child, run: RunState | null): HTMLElemen
 export interface CardViewOptions {
   /** Validité pour la direction choisie ; null tant qu'aucune direction n'est choisie. */
   check?: CardCheck | null;
+  /** Bonus de chance de la carte si elle est valide (GDD 2.7). */
+  bonus?: CardBonus | null;
   selected?: boolean;
   onClick?: () => void;
   compact?: boolean;
 }
 
+const ROLE_TERMS = { reversal: 'retournement', continuation: 'continuation' } as const;
+
+/** Bonus de chance en points, signé : « +12 % ». */
+export function chancePoints(value: number): string {
+  return `${value < 0 ? '−' : '+'}${fmt(Math.abs(value), 0)} %`;
+}
+
 export function cardView(id: CardId, options: CardViewOptions = {}): HTMLElement {
   const def = CARDS[id];
-  const directionText = def.direction === 'long' ? 'Long' : def.direction === 'short' ? 'Short' : 'Long ou short';
+  const directionText = def.direction === 'long' ? 'Long' : def.direction === 'short' ? 'Short' : 'Long/short';
   const check = options.check;
   return h(
     options.onClick ? 'button' : 'div',
@@ -124,12 +134,16 @@ export function cardView(id: CardId, options: CardViewOptions = {}): HTMLElement
     },
     h('div', { class: 'card-head' }, h('span', { class: 'card-family' }, FAMILY_NAMES[def.family]), h('span', { class: 'card-direction' }, directionText)),
     h('div', { class: 'card-name' }, term(CARD_TERMS[id], def.name)),
+    h('div', { class: 'card-role' }, term(ROLE_TERMS[def.role], ROLE_NAMES[def.role])),
     options.compact ? null : h('div', { class: 'card-rule' }, def.rule),
     check === undefined
       ? null
       : check === null
         ? h('div', { class: 'card-check muted' }, 'Choisis long ou short')
         : h('div', { class: 'card-check' }, h('strong', null, check.valid ? '✔ ' : '✘ '), check.reason),
+    check?.valid && options.bonus
+      ? h('div', { class: `card-bonus${options.bonus.value > 0 ? ' plus' : options.bonus.value < 0 ? ' minus' : ''}` }, h('strong', null, chancePoints(options.bonus.value)), ` de chance : ${options.bonus.why}`)
+      : null,
   );
 }
 

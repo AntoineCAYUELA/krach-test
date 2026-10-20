@@ -5,10 +5,12 @@
 import { CONFIG } from '../../config.ts';
 import { EVENTS } from '../../data/events.ts';
 import type { CardCheck } from '../../engine/cards.ts';
+import { cardBonus, CONTEXT_NAMES } from '../../engine/forecast.ts';
 import { snapshot } from '../../engine/indicators.ts';
 import {
   allowedDurations,
-  allowedLeverages,
+  bracketUnits,
+  currentContext,
   discardCards,
   evaluateHand,
   GameError,
@@ -16,20 +18,21 @@ import {
   openPosition,
   passCandle,
   previewPosition,
-  REGIME_NAMES,
+  SIZE_NAMES,
+  sizeOrder,
   upcomingNews,
   type PositionInput,
   type RunState,
   type TradeRecord,
 } from '../../engine/run.ts';
 import { SETUP_NAMES } from '../../engine/scoring.ts';
-import { directionSign, type Candle, type Direction } from '../../engine/types.ts';
+import { directionSign, SIZE_IDS, type Candle, type Direction, type MarketContext, type SizeId } from '../../engine/types.ts';
 import { fmt, money, pct, signed } from '../../format.ts';
 import type { App, View } from '../app.ts';
 import { candleIndexAt, COLORS, drawChart, type CandleMarker, type ChartLayout, type PriceLine } from '../chart.ts';
-import { attempt, cardView, consumableSlots, DIRECTION_LABELS, errorMessage, progressBar, stat, stressGauge, toolSlots } from '../components.ts';
+import { attempt, cardView, chancePoints, consumableSlots, DIRECTION_LABELS, errorMessage, progressBar, stat, stressGauge, toolSlots } from '../components.ts';
 import { h, toast, type Child } from '../dom.ts';
-import { scanTerms, term } from '../tooltip.ts';
+import { term } from '../tooltip.ts';
 
 /** Réglages du ticket d'ordre, conservés d'un tour à l'autre. */
 interface Ticket {
@@ -38,15 +41,8 @@ interface Ticket {
   direction: Direction | null;
   /** Index des cartes sélectionnées dans la main (à jouer ou à défausser). */
   selected: number[];
-  /** Mise en dixièmes du capital (1 = 10 %, 10 = 100 %). */
-  stakeTenths: number;
-  leverage: number;
+  size: SizeId;
   duration: number;
-  stopOn: boolean;
-  /** Distance du stop-loss en % du prix d'entrée. */
-  stopPct: number;
-  takeOn: boolean;
-  takePct: number;
 }
 
 /** Position résolue par le moteur, en cours d'affichage. */
@@ -80,7 +76,7 @@ export function resetTrading(): void {
 function ticketFor(run: RunState): Ticket {
   const key = `${run.seed}/${run.seanceIndex}`;
   if (!ticket) {
-    ticket = { key, direction: null, selected: [], stakeTenths: 5, leverage: 1, duration: CONFIG.seance.tradeDuration, stopOn: false, stopPct: 3, takeOn: false, takePct: 4 };
+    ticket = { key, direction: null, selected: [], size: 'normal', duration: CONFIG.seance.tradeDuration };
   }
   if (ticket.key !== key) {
     ticket.key = key;
@@ -89,22 +85,13 @@ function ticketFor(run: RunState): Ticket {
   }
   const handSize = run.seance?.hand.length ?? 0;
   ticket.selected = ticket.selected.filter((i) => i < handSize);
-  if (!allowedLeverages(run).includes(ticket.leverage)) ticket.leverage = 1;
   if (!allowedDurations(run).includes(ticket.duration)) ticket.duration = CONFIG.seance.tradeDuration;
   return ticket;
 }
 
-function positionInput(run: RunState, t: Ticket): PositionInput | null {
+function positionInput(t: Ticket): PositionInput | null {
   if (!t.direction) return null;
-  return {
-    direction: t.direction,
-    stake: t.stakeTenths >= 10 ? run.capital : (run.capital * t.stakeTenths) / 10,
-    leverage: t.leverage,
-    stopLossPct: t.stopOn ? t.stopPct / 100 : null,
-    takeProfitPct: t.takeOn ? t.takePct / 100 : null,
-    duration: t.duration,
-    cardIndices: [...t.selected],
-  };
+  return { direction: t.direction, size: t.size, duration: t.duration, cardIndices: [...t.selected] };
 }
 
 // ---------------------------------------------------------------------------
@@ -124,7 +111,7 @@ export function renderTrading(app: App, run: RunState): View {
   const canvas = h('canvas', { class: 'chart-canvas', 'aria-label': `Graphique en chandeliers de ${seance.stock.name}` });
   const hoverInfo = h('div', { class: 'chart-hover' });
   let layout: ChartLayout | null = null;
-  let previewLines: PriceLine[] = [];
+  const previewLines: PriceLine[] = p ? [] : ticketLines(run, t);
 
   const draw = () => {
     const lines: PriceLine[] = p ? tradeLines(p.record) : previewLines;
@@ -165,6 +152,7 @@ export function renderTrading(app: App, run: RunState): View {
   });
 
   const toggles = chartToggles(app, snap, (candles[candles.length - 1] as Candle).v, draw);
+  const context = p ? p.record.chance.context : currentContext(run);
   const chartPanel = h(
     'section',
     { class: 'chart-panel' },
@@ -172,6 +160,7 @@ export function renderTrading(app: App, run: RunState): View {
       'div',
       { class: 'chart-toolbar' },
       h('div', { class: 'stock' }, h('strong', null, seance.stock.ticker), ` ${seance.stock.name} · ${seance.stock.profile} · `, term('volatilite', 'σ'), ` ${pct(seance.stock.sigma)}`),
+      contextBadge(context, p !== null),
       toggles,
     ),
     h('div', { class: 'chart-wrap' }, canvas, hoverInfo),
@@ -180,11 +169,7 @@ export function renderTrading(app: App, run: RunState): View {
 
   // --- Main et ticket
   const handPanel = p ? playedCardsPanel(p) : handPanelView(app, run, t);
-  const side = p ? tradePanel(app, run, p, done) : ticketPanel(app, run, t, (lines) => {
-    previewLines = lines;
-    draw();
-  });
-  if (!p) previewLines = ticketLines(run, t);
+  const side = p ? tradePanel(app, run, p, done) : ticketPanel(app, run, t);
 
   const stress = run.life ? (p && !done ? p.stressBefore : run.life.stress) : null;
   const values = p && !done
@@ -242,7 +227,7 @@ function hud(app: App, run: RunState, v: HudValues): HTMLElement {
         null,
         term('seance', 'Séance'),
         ` ${seance.index + 1} / ${CONFIG.run.seanceCount} `,
-        h('span', { class: 'seed', title: 'Graine de la run : rejoue exactement les mêmes marchés' }, `· graine ${run.seed}`),
+        h('span', { class: 'seed', title: 'Graine de la run : chaque séance démarre sur le même marché' }, `· graine ${run.seed}`),
       ),
     ),
     stat('Capital', money(v.capital)),
@@ -302,7 +287,17 @@ function chartToggles(app: App, snap: ReturnType<typeof snapshot>, volume: numbe
     toggle('levels', [term('support'), ' / ', term('resistance')], `${level(snap.support)} / ${level(snap.resistance)}`, COLORS.support),
     toggle('volume', term('volume'), ratio, COLORS.text),
     toggle('rsi', term('rsi'), snap.rsi === null ? '–' : fmt(snap.rsi, 1), COLORS.rsi),
-    h('span', { class: 'slope' }, term('tendance', 'Pente MM20'), ' ', snap.trendSlope === null ? '–' : signed(snap.trendSlope)),
+    h('span', { class: 'slope' }, 'Pente MM20 ', snap.trendSlope === null || snap.sma20 === null ? '–' : `${signed((snap.trendSlope / snap.sma20) * 100, 1)} %`),
+  );
+}
+
+/** Contexte de marché (GDD 2.7), toujours visible ; pendant une position, celui de l'entrée. */
+function contextBadge(context: MarketContext, atEntry: boolean): HTMLElement {
+  return h(
+    'div',
+    { class: `context context-${context}`, title: `Tendance si la pente de MM20 dépasse ±${pct(CONFIG.forecast.trendThreshold, 1)} et que le Close est du même côté de MM20` },
+    h('span', { class: 'context-label' }, term('tendance', 'Contexte'), atEntry ? ' à l’entrée' : ''),
+    h('strong', null, CONTEXT_NAMES[context]),
   );
 }
 
@@ -335,12 +330,9 @@ function banners(run: RunState, candles: readonly Candle[], p: PendingTrade | nu
         h('div', { class: 'banner calendar' }, h('strong', null, 'Calendrier'), ` Dans ${news.inCandles} bougie${news.inCandles > 1 ? 's' : ''} : « ${news.headline} » (`, term('sentiment', 'sentiment'), ` ${news.sentiment === 'positive' ? 'positif' : 'négatif'})`),
       );
     }
-    const count = seance.market.candles.length;
-    if (seance.crystalBall && seance.crystalBall.candleCount === count) {
-      items.push(h('div', { class: 'banner crystal' }, h('strong', null, 'Boule de cristal'), ` La prochaine bougie sera ${seance.crystalBall.bullish ? 'verte' : 'rouge'}.`));
-    }
-    if (seance.revealedRegime && seance.revealedRegime.candleCount === count) {
-      items.push(h('div', { class: 'banner report' }, h('strong', null, 'Rapport d’analyste'), ' ', term('regime-de-marche', 'Régime'), ` actuel : ${REGIME_NAMES[seance.revealedRegime.regime]}.`));
+    if (seance.crystalBall) items.push(h('div', { class: 'banner crystal' }, h('strong', null, 'Boule de cristal'), ' active : le ticket montre l’issue du prochain trade.'));
+    if (seance.analystBoost) {
+      items.push(h('div', { class: 'banner report' }, h('strong', null, 'Rapport d’analyste'), ` lu : ${chancePoints(CONFIG.consumables.analystReport.chanceBonus)} de chance sur le prochain trade.`));
     }
     if (seance.hedgeActive) items.push(h('div', { class: 'banner hedge' }, h('strong', null, term('couverture', 'Couverture')), ' active : le P&L net du prochain trade sera divisé par 2.'));
   }
@@ -357,6 +349,7 @@ function banners(run: RunState, candles: readonly Candle[], p: PendingTrade | nu
 function handPanelView(app: App, run: RunState, t: Ticket): HTMLElement {
   const seance = run.seance!;
   const checks = t.direction ? evaluateHand(run, t.direction) : null;
+  const context = currentContext(run);
   const toggle = (i: number) => {
     const at = t.selected.indexOf(i);
     if (at >= 0) t.selected.splice(at, 1);
@@ -375,7 +368,14 @@ function handPanelView(app: App, run: RunState, t: Ticket): HTMLElement {
     h(
       'div',
       { class: 'hand' },
-      seance.hand.map((id, i) => cardView(id, { check: checks ? (checks[i] ?? null) : null, selected: t.selected.includes(i), onClick: () => toggle(i) })),
+      seance.hand.map((id, i) =>
+        cardView(id, {
+          check: checks ? (checks[i] ?? null) : null,
+          bonus: t.direction ? cardBonus(id, t.direction, context) : null,
+          selected: t.selected.includes(i),
+          onClick: () => toggle(i),
+        }),
+      ),
     ),
   );
 }
@@ -386,7 +386,7 @@ function playedCardsPanel(p: PendingTrade): HTMLElement {
     'section',
     { class: 'hand-panel' },
     h('div', { class: 'panel-title' }, h('span', null, r.playedCards.length > 0 ? 'Cartes jouées' : 'Aucune carte jouée'), h('span', { class: 'muted' }, `Setup : ${SETUP_NAMES[r.setup.type]}`)),
-    h('div', { class: 'hand' }, r.playedCards.map((id, i) => cardView(id, { check: p.playedChecks[i] ?? null }))),
+    h('div', { class: 'hand' }, r.playedCards.map((id, i) => cardView(id, { check: p.playedChecks[i] ?? null, bonus: cardBonus(id, r.direction, r.chance.context) }))),
   );
 }
 
@@ -394,40 +394,31 @@ function playedCardsPanel(p: PendingTrade): HTMLElement {
 // Ticket d'ordre
 
 function ticketLines(run: RunState, t: Ticket): PriceLine[] {
-  const input = positionInput(run, t);
+  const input = positionInput(t);
   if (!input) return [];
-  const preview = previewPosition(run, input).preview;
-  return priceLines(preview.entryPrice, preview.stopPrice, preview.takePrice, preview.liquidationPrice, true);
+  const view = previewPosition(run, input);
+  return priceLines(view.preview.entryPrice, view.preview.stopPrice, view.preview.takePrice, view.chance.value, true);
 }
 
 function tradeLines(r: TradeRecord): PriceLine[] {
-  return priceLines(r.trade.entryPrice, r.trade.stopPrice, r.trade.takePrice, r.trade.liquidationPrice, false);
+  return priceLines(r.trade.entryPrice, r.trade.stopPrice, r.trade.takePrice, r.chance.value, false);
 }
 
-function priceLines(entry: number, stop: number | null, take: number | null, liquidation: number, dashed: boolean): PriceLine[] {
+/** Lignes d'entrée, de stop-loss et de take-profit, avec la chance de chaque niveau (GDD 9, écran 4). */
+function priceLines(entry: number, stop: number | null, take: number | null, chance: number, dashed: boolean): PriceLine[] {
   const lines: PriceLine[] = [{ price: entry, label: 'Entrée', color: COLORS.entry, dashed }];
-  if (stop !== null) lines.push({ price: stop, label: 'Stop-loss', color: COLORS.down, dashed: true });
-  if (take !== null) lines.push({ price: take, label: 'Take-profit', color: COLORS.up, dashed: true });
-  lines.push({ price: liquidation, label: 'Liquidation', color: COLORS.liquidation, dashed: true });
+  if (stop !== null) lines.push({ price: stop, label: `Stop-loss ${pct(1 - chance, 0)}`, color: COLORS.down, dashed: true });
+  if (take !== null) lines.push({ price: take, label: `Take-profit ${pct(chance, 0)}`, color: COLORS.up, dashed: true });
   return lines;
 }
 
-function ticketPanel(app: App, run: RunState, t: Ticket, onPreviewLines: (lines: PriceLine[]) => void): HTMLElement {
+function ticketPanel(app: App, run: RunState, t: Ticket): HTMLElement {
   const seance = run.seance!;
   const previewHost = h('div', { class: 'preview-host' });
   const openHost = h('div', { class: 'open-host' });
-  const showPreview = () => {
-    const { table, open } = previewBlock(app, run, t);
-    previewHost.replaceChildren(table);
-    openHost.replaceChildren(open);
-  };
-
-  const refresh = () => {
-    showPreview();
-    scanTerms(previewHost);
-    scanTerms(openHost);
-    onPreviewLines(ticketLines(run, t));
-  };
+  const { table, open } = previewBlock(app, run, t);
+  previewHost.replaceChildren(table);
+  openHost.replaceChildren(open);
 
   const directionButtons = h(
     'div',
@@ -447,32 +438,31 @@ function ticketPanel(app: App, run: RunState, t: Ticket, onPreviewLines: (lines:
     ),
   );
 
-  const stakeLabel = h('span', { class: 'field-value' });
-  const updateStakeLabel = () => {
-    const input = positionInput(run, t);
-    stakeLabel.textContent = `${t.stakeTenths * 10} % · ${money(input?.stake ?? (run.capital * t.stakeTenths) / 10)}`;
-  };
-  updateStakeLabel();
-  const stake = h('input', {
-    type: 'range',
-    min: 1,
-    max: 10,
-    step: 1,
-    value: String(t.stakeTenths),
-    'aria-label': 'Mise en % du capital',
-    onInput: (e: Event) => {
-      t.stakeTenths = Number((e.target as HTMLInputElement).value);
-      updateStakeLabel();
-      refresh();
-    },
-  });
-
-  const leverageButtons = h(
+  const chosen = sizeOrder(run, t.size);
+  const sizeButtons = h(
     'div',
     { class: 'segmented' },
-    allowedLeverages(run).map((lev) =>
-      h('button', { class: t.leverage === lev ? 'active' : '', onClick: () => { t.leverage = lev; app.render(); } }, `×${lev}`),
+    SIZE_IDS.map((size) =>
+      h(
+        'button',
+        {
+          class: t.size === size ? 'active' : '',
+          onClick: () => {
+            t.size = size;
+            app.render();
+          },
+        },
+        `${SIZE_NAMES[size]} ×${sizeOrder(run, size).leverage}`,
+      ),
     ),
+  );
+  const sizeText = h(
+    'span',
+    { class: 'muted small' },
+    term('mise', 'Mise'),
+    ` ${money(chosen.stake)} (${pct(CONFIG.sizes[t.size].stakePct, 0)} du capital) · `,
+    term('levier', 'levier'),
+    ` ×${chosen.leverage}`,
   );
 
   const durations = allowedDurations(run);
@@ -490,56 +480,14 @@ function ticketPanel(app: App, run: RunState, t: Ticket, onPreviewLines: (lines:
         )
       : null;
 
-  const protection = (kind: 'stop' | 'take') => {
-    const on = kind === 'stop' ? t.stopOn : t.takeOn;
-    const value = kind === 'stop' ? t.stopPct : t.takePct;
-    const number = h('input', {
-      type: 'number',
-      min: 0.5,
-      max: kind === 'stop' ? 50 : 100,
-      step: 0.5,
-      value: String(value),
-      disabled: !on,
-      'aria-label': kind === 'stop' ? 'Distance du stop-loss en %' : 'Distance du take-profit en %',
-      onInput: (e: Event) => {
-        const v = Number((e.target as HTMLInputElement).value);
-        if (!(v > 0)) return;
-        if (kind === 'stop') t.stopPct = v;
-        else t.takePct = v;
-        refresh();
-      },
-    });
-    const box = h('input', {
-      type: 'checkbox',
-      checked: on,
-      onChange: (e: Event) => {
-        const checked = (e.target as HTMLInputElement).checked;
-        if (kind === 'stop') t.stopOn = checked;
-        else t.takeOn = checked;
-        number.disabled = !checked;
-        refresh();
-      },
-    });
-    const toolNote =
-      kind === 'stop' && hasTool(run, 'stopLoss')
-        ? h('span', { class: 'muted small' }, `Outil : −${pct(CONFIG.tools.stopLoss.stopPct, 0)} auto`)
-        : kind === 'take' && hasTool(run, 'takeProfit')
-          ? h('span', { class: 'muted small' }, `Outil : +${pct(CONFIG.tools.takeProfit.takePct, 0)} auto`)
-          : null;
-    return h('div', { class: 'protection' }, h('label', { class: 'inline' }, box, kind === 'stop' ? term('stop-loss', 'Stop-loss') : term('take-profit', 'Take-profit')), number, h('span', null, '%'), toolNote);
-  };
-
   const discardDisabled = t.selected.length === 0 || seance.discards <= 0 || t.selected.length > CONFIG.seance.handSize;
-  const element = h(
+  return h(
     'aside',
     { class: 'ticket' },
     h('h2', null, 'Ticket d’ordre'),
     field('Direction', directionButtons, h('span', { class: 'muted small' }, [term('long', 'Long'), ' gagne à la hausse, ', term('short'), ' à la baisse'])),
-    field(term('mise'), stake, stakeLabel),
-    field(term('levier'), leverageButtons),
+    field(term('taille-de-position', 'Taille'), sizeButtons, sizeText),
     durationRow,
-    protection('stop'),
-    protection('take'),
     previewHost,
     h(
       'div',
@@ -575,51 +523,67 @@ function ticketPanel(app: App, run: RunState, t: Ticket, onPreviewLines: (lines:
       ),
     ),
   );
-  showPreview();
-  return element;
 }
 
 function field(label: Child, control: Child, extra?: Child): HTMLElement {
   return h('div', { class: 'field' }, h('span', { class: 'field-label' }, label), h('div', { class: 'field-control' }, control, extra));
 }
 
-/** Aperçu en direct (GDD 2.3 étape 4) et bouton d'ouverture, toujours visible en bas du ticket. */
+/** Prévision et aperçu en direct (GDD 2.3 étape 4, 2.7), et bouton d'ouverture toujours visible en bas du ticket. */
 function previewBlock(app: App, run: RunState, t: Ticket): { table: HTMLElement; open: HTMLElement } {
-  const input = positionInput(run, t);
+  const input = positionInput(t);
   if (!input) {
     return {
-      table: h('div', { class: 'preview' }, h('p', { class: 'muted' }, 'Choisis long ou short : chaque carte affiche alors ✔ ou ✘ avec la raison.')),
+      table: h('div', { class: 'preview' }, h('p', { class: 'muted' }, 'Choisis long ou short : chaque carte affiche alors ✔ ou ✘ avec la raison, et son bonus de chance.')),
       open: h('button', { class: 'primary open', disabled: true }, 'Ouvrir la position'),
     };
   }
   const view = previewPosition(run, input);
   const pv = view.preview;
-  const rows: [Child, Child][] = [
+  const chance = view.chance;
+  const units = bracketUnits(run);
+  const raw = chance.base + chance.terms.reduce((sum, x) => sum + x.value, 0) / 100;
+
+  const forecast = h(
+    'div',
+    { class: 'forecast' },
+    h('div', { class: 'forecast-head' }, h('span', null, 'Chance de toucher le ', term('take-profit')), h('strong', { class: 'forecast-value' }, pct(chance.value, 0))),
+    h(
+      'table',
+      { class: 'forecast-terms' },
+      h('tr', null, h('th', null, 'Chance de base (', term('ratio-risque-rendement', 'ratio'), ` ${fmt(units.take / units.stop, 1)})`), h('td', null, pct(chance.base, 0))),
+      chance.terms.map((x) => h('tr', { class: x.value > 0 ? 'plus' : x.value < 0 ? 'minus' : '' }, h('th', null, x.label), h('td', null, chancePoints(x.value)))),
+      Math.abs(raw - chance.value) > 1e-9 ? h('tr', null, h('th', null, `Bornée entre ${pct(CONFIG.forecast.min, 0)} et ${pct(CONFIG.forecast.max, 0)}`), h('td', null, pct(chance.value, 0))) : null,
+    ),
+    view.crystal
+      ? h('p', { class: 'crystal' }, h('strong', null, 'Boule de cristal'), ` : avec ce ticket, le prix touchera le ${view.crystal === 'takeProfit' ? 'take-profit' : 'stop-loss'} (hors news).`)
+      : null,
+  );
+
+  const move = (price: number | null) => (price === null ? '' : ` (${signed((price / pv.entryPrice - 1) * 100, 1)} %)`);
+  const rows: [Child, Child, string?][] = [
+    [['Gain au ', term('take-profit')], `${signed(view.gainAtTake)} $`, 'gain'],
+    [['Perte au ', term('stop-loss')], `${signed(view.lossAtStop)} $`, 'loss'],
+    [term('esperance-de-gain', 'Espérance de gain'), `${signed(view.expectancy)} $`, view.expectancy >= 0 ? 'gain' : 'loss'],
+    ['Risque', `${pct(view.riskPct, 1)} du capital`],
     [['Prix d’entrée (', term('spread'), ' inclus)'], money(pv.entryPrice)],
-    [term('notionnel', 'Notionnel'), `${money(input.stake)} × ${input.leverage} = ${money(pv.notional)}`],
+    ['Stop-loss', `${pv.stopPrice === null ? '–' : money(pv.stopPrice)}${move(pv.stopPrice)}`],
+    ['Take-profit', `${pv.takePrice === null ? '–' : money(pv.takePrice)}${move(pv.takePrice)}`],
+    [term('notionnel', 'Notionnel'), `${money(view.order.stake)} × ${view.order.leverage} = ${money(pv.notional)}`],
     [[term('frais', 'Frais'), ' estimés (aller-retour)'], money(pv.fees)],
-    [
-      'Stop-loss',
-      pv.stopPrice === null
-        ? 'aucun'
-        : `${money(pv.stopPrice)} (${signed(-(view.stop.pct ?? 0) * 100, 1)} %)${view.stop.fromTool ? ' · Outil' : ''}`,
-    ],
-    [
-      'Take-profit',
-      pv.takePrice === null
-        ? 'aucun'
-        : `${money(pv.takePrice)} (${signed((view.take.pct ?? 0) * 100, 1)} %)${view.take.fromTool ? ' · Outil' : ''}`,
-    ],
-    ['Perte maximale', pv.lossAtStop === null ? `sans stop-loss : jusqu’à la mise entière (${money(input.stake)})` : `${money(pv.lossAtStop)} si le stop-loss est touché`],
-    [term('liquidation', 'Prix de liquidation'), `${money(pv.liquidationPrice)} (${signed((pv.liquidationPrice / pv.entryPrice - 1) * 100, 1)} %)`],
+    ['Setup', `${SETUP_NAMES[view.setup.type]} ×${fmt(view.setup.baseMulti, 1)}${view.multi.terms.length > 0 ? ` → Multi ×${fmt(view.multi.total, 2)}` : ''}`],
   ];
-  const multiText = `${SETUP_NAMES[view.setup.type]} ×${fmt(view.setup.baseMulti, 1)}${view.multi.terms.length > 0 ? ` → Multi ×${fmt(view.multi.total, 2)}` : ''}`;
-  rows.push(['Setup', multiText]);
-  if (hasTool(run, 'twoPercentRule')) rows.push(['Règle des 2 %', view.twoPercentOk ? '✔ risque ≤ 2 % du capital' : '✘ risque trop élevé ou pas de stop-loss']);
+  if (hasTool(run, 'twoPercentRule')) rows.push(['Règle des 2 %', view.twoPercentOk ? '✔ risque ≤ 2 % du capital' : '✘ risque au-dessus de 2 % du capital']);
 
   const error = view.error;
+  const cards = input.cardIndices.length;
   return {
-    table: h('div', { class: 'preview' }, h('table', null, rows.map(([label, value]) => h('tr', null, h('th', null, label), h('td', null, value))))),
+    table: h(
+      'div',
+      { class: 'preview' },
+      forecast,
+      h('table', null, rows.map(([label, value, cls]) => h('tr', { class: cls ?? '' }, h('th', null, label), h('td', null, value)))),
+    ),
     open: h(
       'div',
       null,
@@ -631,7 +595,7 @@ function previewBlock(app: App, run: RunState, t: Ticket): { table: HTMLElement;
           disabled: error !== null,
           onClick: () => openTrade(app, run, t, input),
         },
-        `Ouvrir la position ${DIRECTION_LABELS[input.direction].toLowerCase()} (${input.cardIndices.length} carte${input.cardIndices.length > 1 ? 's' : ''})`,
+        `Ouvrir ${DIRECTION_LABELS[input.direction].toLowerCase()} ${SIZE_NAMES[input.size].toLowerCase()} (${cards} carte${cards > 1 ? 's' : ''})`,
       ),
     ),
   };
@@ -710,7 +674,7 @@ function tradePanel(app: App, run: RunState, p: PendingTrade, done: boolean): HT
   const header = h(
     'div',
     { class: 'trade-header' },
-    h('h2', null, `Position ${DIRECTION_LABELS[r.direction].toLowerCase()} ×${tr.order.leverage}`),
+    h('h2', null, `Position ${DIRECTION_LABELS[r.direction].toLowerCase()} ${SIZE_NAMES[r.size].toLowerCase()} ×${tr.order.leverage}`),
     h('p', { class: 'muted' }, `Mise ${money(tr.order.stake)} · notionnel ${money(tr.notional)} · entrée ${money(tr.entryPrice)}`),
     h('div', { class: 'candle-steps' }, tr.candles.map((c, k) => h('span', { class: `step${k < p.shown ? (c.c >= c.o ? ' up' : ' down') : ''}${k === tr.exitOffset && closed ? ' exit' : ''}` }, String(k + 1)))),
   );
@@ -730,6 +694,8 @@ function tradePanel(app: App, run: RunState, p: PendingTrade, done: boolean): HT
 
   const seance = run.seance!;
   const rows: [Child, string, string?][] = [];
+  const outcome = tr.gapped ? 'gap de news' : tr.exitReason === 'takeProfit' ? 'take-profit touché' : tr.exitReason === 'stopLoss' ? 'stop-loss touché' : 'sans niveau touché';
+  rows.push([['Chance affichée (', term('take-profit'), ')'], `${pct(r.chance.value, 0)} : ${outcome}`]);
   if (tr.exitReason === 'liquidation') {
     rows.push([[term('pnl', 'P&L'), ' net (mise perdue)'], `${signed(tr.pnlNet)} $`, 'loss']);
   } else {
@@ -738,15 +704,16 @@ function tradePanel(app: App, run: RunState, p: PendingTrade, done: boolean): HT
     rows.push(['P&L net', `${signed(tr.pnlNet)} $`, tr.pnlNet >= 0 ? 'gain' : 'loss']);
   }
   if (r.hedged) rows.push([[term('couverture', 'Couverture'), ' ×0,5'], `${signed(r.pnlNet)} $`]);
-  rows.push([`Points d’analyse (${r.setup.validCards.length} carte${r.setup.validCards.length > 1 ? 's' : ''} valide${r.setup.validCards.length > 1 ? 's' : ''} × ${CONFIG.scoring.analysisPointsPerCard})`, `+${fmt(r.score.analysisPoints, 0)}`]);
-  rows.push(['Résultat', signed(r.score.result), 'total']);
+  rows.push(['Résultat (P&L net)', signed(r.score.result), 'total']);
   if (r.score.result >= 0) {
     rows.push([`Multi de setup : ${SETUP_NAMES[r.setup.type]}`, `×${fmt(r.multi.base, 1)}`]);
     for (const m of r.multi.terms) rows.push([m.label, m.kind === 'add' ? `+${fmt(m.value, 1)}` : `×${fmt(m.value, 1)}`]);
     rows.push(['Multi total', `×${fmt(r.multi.total, 2)}`, 'total']);
     rows.push(['Performance du trade (Résultat × Multi)', signed(r.score.performance), 'total gain']);
   } else {
-    rows.push([`Résultat négatif × ${fmt(CONFIG.scoring.lossFactor, 1)} (le Multi ne s’applique pas aux pertes)`, signed(r.score.performance), 'total loss']);
+    const factor = Math.round((r.score.performance / r.score.result) * 100) / 100;
+    const disciplined = Math.abs(factor - CONFIG.tools.stopLoss.lossFactor) < 1e-9 && factor !== CONFIG.scoring.lossFactor;
+    rows.push([`Résultat négatif × ${fmt(factor, factor * 10 === Math.round(factor * 10) ? 1 : 2)}${disciplined ? ' (Stop-loss discipliné)' : ''} : le Multi ne s’applique pas aux pertes`, signed(r.score.performance), 'total loss']);
   }
 
   const perfBefore = p.performanceBefore;

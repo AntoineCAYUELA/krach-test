@@ -65,14 +65,22 @@ test('partie à graine fixe : un trade met à jour le capital et la Performance,
 
   // État de départ (GDD 2.1 et 2.2).
   expect(parseNumber(await hudValue(page, 'Capital'))).toBe(1000);
-  await expect(page.locator('.stat-performance .stat-value')).toHaveText('0,00 / 20');
+  await expect(page.locator('.stat-performance .stat-value')).toHaveText('0,00 / 60');
   expect(await hudValue(page, 'Ordres')).toBe('5');
   expect(await hudValue(page, 'Bougies')).toBe('24');
+
+  // Contexte de marché toujours visible ; la direction choisie, le ticket affiche la prévision.
+  await expect(page.locator('.chart-toolbar .context')).toContainText(/Tendance haussière|Tendance baissière|Sans tendance/);
+  await page.locator('.ticket .segmented button.long').click();
+  await expect(page.locator('.ticket .forecast-value')).toHaveText(/^\d+\s%$/);
+  await expect(page.locator('.ticket .preview')).toContainText('Espérance de gain');
+  await expect(page.locator('.hand .card')).toHaveCount(7);
 
   // Première position : animation, décomposition du score, mise à jour de la barre d'état.
   await openBestPosition(page);
   const breakdown = page.locator('.ticket.trade .breakdown');
   await expect(breakdown).toBeVisible();
+  await expect(breakdown).toContainText('Chance affichée');
   const capitalLine = (await page.locator('.ticket.trade .after p', { hasText: /^Capital :/ }).textContent()) ?? '';
   const performanceLine = (await page.locator('.ticket.trade .after p', { hasText: /^Performance de séance/ }).textContent()) ?? '';
   const capitalAfter = parseNumber(capitalLine.split('→')[1] ?? '');
