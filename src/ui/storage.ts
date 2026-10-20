@@ -48,9 +48,11 @@ function remove(key: string): void {
 
 // --- Run en cours
 
+/** Run sauvegardée, ou null si absente ou d'un format inconnu (elle est alors ignorée). */
 export function loadRun(): RunState | null {
   const run = read<RunState>('run');
-  return run && run.version === 1 ? run : null;
+  if (!run || run.version !== 1 || typeof run.phase !== 'string' || !Array.isArray(run.deck) || !run.seance) return null;
+  return run;
 }
 
 export function saveRun(run: RunState | null): void {
