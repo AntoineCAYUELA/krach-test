@@ -87,20 +87,21 @@ const STEPS: Step[] = [
   {
     title: '2. Ouvrir une position',
     body: () => [
+      h('p', null, 'Au-dessus du graphique, le contexte de marché dit s’il y a une ', term('tendance'), ' : haussière, baissière, ou sans tendance.'),
       h(
         'ol',
         null,
         h('li', null, 'Choisis la direction : ', term('long'), ' (tu gagnes si le prix monte) ou ', term('short'), ' (s’il baisse).'),
-        h('li', null, 'Chaque carte Signal de ta main affiche alors ✔ si sa condition est vraie sur la dernière bougie, ✘ sinon, avec la raison.'),
-        h('li', null, `Sélectionne 0 à ${CONFIG.seance.maxPlayedCards} cartes à jouer, puis règle la `, term('mise'), ', le ', term('levier'), ', et si tu veux un ', term('stop-loss'), ' et un ', term('take-profit'), '.'),
-        h('li', null, `La position dure ${CONFIG.seance.tradeDuration} bougies, sauf si le stop-loss, le take-profit ou la `, term('liquidation'), ' la ferment avant.'),
+        h('li', null, 'Chaque carte Signal de ta main affiche alors ✔ si sa condition est vraie sur la dernière bougie, ✘ sinon, et son bonus de chance. Un ', term('retournement'), ' marche surtout sans tendance, une ', term('continuation'), ' dans le sens de la tendance.'),
+        h('li', null, `Sélectionne 0 à ${CONFIG.seance.maxPlayedCards} cartes et une `, term('taille-de-position', 'taille'), ' : Prudent, Normal ou Agressif. Le ', term('stop-loss'), ' et le ', term('take-profit'), ' sont placés automatiquement.'),
+        h('li', null, 'Le ticket affiche ta chance de toucher le take-profit, le gain, la perte et l’', term('esperance-de-gain', 'espérance de gain'), '. Le marché respecte cette chance, sauf quand une news fait sauter un niveau par un ', term('gap'), '.'),
       ),
       h(
         'p',
         null,
-        `Chaque séance te donne ${CONFIG.seance.orders} ordres, ${CONFIG.seance.discards} défausses et ${CONFIG.seance.candles} bougies. Défausser remplace des cartes ; passer fait avancer le marché d’une bougie. Le `,
-        term('notionnel'),
-        ` vaut mise × levier : avec un levier ×2, une baisse de ${pct(CONFIG.trade.liquidationThreshold / 2, 0)} suffit à perdre toute la mise.`,
+        `Sans carte, la chance est de ${pct(CONFIG.forecast.stopUnits / (CONFIG.forecast.stopUnits + CONFIG.forecast.takeUnits), 0)} : avec un `,
+        term('ratio-risque-rendement', 'ratio risque/rendement'),
+        ` de ${fmt(CONFIG.forecast.takeUnits / CONFIG.forecast.stopUnits, 1)}, c’est le seuil où l’on ne gagne rien avant frais. Chaque séance te donne ${CONFIG.seance.orders} ordres, ${CONFIG.seance.discards} défausses et ${CONFIG.seance.candles} bougies. Défausser remplace des cartes ; passer fait avancer le marché d’une bougie.`,
       ),
     ],
   },
@@ -110,8 +111,7 @@ const STEPS: Step[] = [
       h(
         'div',
         { class: 'formula' },
-        h('p', null, h('strong', null, 'Points d’analyse'), ` = ${CONFIG.scoring.analysisPointsPerCard} × cartes valides jouées`),
-        h('p', null, h('strong', null, 'Résultat'), ' = Points d’analyse + ', term('pnl', 'P&L'), ' net (gain ou perte en $, ', term('frais'), ' déduits)'),
+        h('p', null, h('strong', null, 'Résultat'), ' = ', term('pnl', 'P&L'), ' net (gain ou perte en $, ', term('frais'), ' déduits)'),
         h('p', null, h('strong', null, 'Performance'), ` = Résultat × Multi si le Résultat est positif, Résultat × ${fmt(CONFIG.scoring.lossFactor, 1)} sinon`),
       ),
       h(
@@ -120,7 +120,7 @@ const STEPS: Step[] = [
         h('tr', null, h('th', null, 'Setup (cartes valides)'), h('th', null, 'Multi')),
         SETUP_TYPES.map((type) => h('tr', null, h('td', null, SETUP_NAMES[type]), h('td', null, `×${fmt(CONFIG.scoring.setupMulti[type], 1)}`))),
       ),
-      h('p', null, 'Une ', term('confluence'), ' mélange des familles de cartes différentes : elle vaut plus qu’un double signal de la même famille. Les Outils de la boutique ajoutent des bonus de Multi.'),
+      h('p', null, 'Les cartes servent deux fois : elles augmentent ta chance de gagner et le Multi. Une ', term('confluence'), ' mélange des familles de cartes différentes : elle vaut plus qu’un double signal de la même famille. Les Outils de la boutique ajoutent des bonus de Multi.'),
       h('p', null, `Atteins le quota de Performance de chaque séance. Ton capital est conservé d’une séance à l’autre : sous ${CONFIG.run.minStake} $, c’est le margin call et la run s’arrête.`),
     ],
   },

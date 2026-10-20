@@ -28,7 +28,7 @@ describe('séance', () => {
   it('démarre avec les ressources du GDD 2.2', () => {
     const run = startedRun();
     const s = run.seance!;
-    expect([s.orders, s.discards, s.candlesLeft, s.hand.length, s.drawPile.length]).toEqual([5, 3, 24, 5, 15]);
+    expect([s.orders, s.discards, s.candlesLeft, s.hand.length, s.drawPile.length]).toEqual([5, 3, 24, 7, 13]);
     expect(s.market.candles).toHaveLength(40);
   });
 
@@ -47,23 +47,23 @@ describe('séance', () => {
     const s = run.seance!;
     discardCards(run, [0, 1]);
     expect(s.discards).toBe(2);
-    expect(s.hand).toHaveLength(5);
+    expect(s.hand).toHaveLength(7);
     expect(s.discardPile).toHaveLength(2);
-    expect(s.drawPile).toHaveLength(13);
+    expect(s.drawPile).toHaveLength(11);
   });
 
   it('la pioche vide se reforme avec la défausse', () => {
     const run = startedRun();
     const s = run.seance!;
     s.discards = 10;
-    for (let i = 0; i < 4; i++) discardCards(run, [0, 1, 2, 3, 4]);
-    expect(s.hand).toHaveLength(5);
+    for (let i = 0; i < 4; i++) discardCards(run, [0, 1, 2, 3, 4, 5, 6]);
+    expect(s.hand).toHaveLength(7);
     expect(s.hand.length + s.drawPile.length + s.discardPile.length).toBe(20);
   });
 
   it('une position consomme 1 ordre et 3 bougies, et met à jour capital et Performance', () => {
     const run = scriptedRun(flatHistory(), steadyFuture(0.01));
-    const record = openPosition(run, order({ stake: 1000 }));
+    const record = openPosition(run, order());
     expect(run.seance!.orders).toBe(4);
     expect(run.seance!.candlesLeft).toBe(21);
     expect(run.capital).toBeCloseTo(1000 + record.pnlNet, 10);
@@ -73,7 +73,7 @@ describe('séance', () => {
 
   it('une perte réduit la Performance de séance sans la rendre négative', () => {
     const run = scriptedRun(flatHistory(), steadyFuture(-0.01));
-    openPosition(run, order({ stake: 1000 }));
+    openPosition(run, order());
     expect(run.capital).toBeLessThan(1000);
     expect(run.seance!.performance).toBe(0);
   });
@@ -82,7 +82,7 @@ describe('séance', () => {
     const run = scriptedRun(flatHistory(), steadyFuture(0.01));
     run.seance!.quota = 1;
     const primes = run.primes;
-    openPosition(run, order({ stake: 1000 }));
+    openPosition(run, order());
     expect(run.phase).toBe('summary');
     const rewards = run.seance!.rewards!;
     expect(rewards.base).toBe(CONFIG.rewards.normalSeance);
@@ -99,10 +99,20 @@ describe('séance', () => {
     expect(run.seance!.rewards).toMatchObject({ base: 5, interest: 4 });
   });
 
-  it('capital sous 10 $ : compte liquidé, run perdue', () => {
+  it('le stop-loss automatique limite la perte d’une position', () => {
     const future: Candle[] = [candle(100, 100, 55, 58), candle(58, 59, 57, 58), candle(58, 59, 57, 58)];
     const run = scriptedRun(flatHistory(), future);
-    openPosition(run, order({ stake: 1000, leverage: 2 }));
+    const record = openPosition(run, order({ size: 'aggressive' }));
+    expect(record.trade.exitReason).toBe('stopLoss');
+    expect(record.trade.exitPrice).toBeCloseTo(100.1 * 0.97, 10);
+    expect(run.capital).toBeGreaterThan(900);
+  });
+
+  it('capital sous 10 $ : compte liquidé, run perdue (gap de news à ×5)', () => {
+    const future: Candle[] = [candle(55, 56, 54, 55), candle(55, 56, 54, 55), candle(55, 56, 54, 55)];
+    const run = scriptedRun(flatHistory(), future, ['leverage']);
+    const record = openPosition(run, order({ size: 'aggressive' }));
+    expect(record.trade.exitReason).toBe('liquidation');
     expect(run.capital).toBe(0);
     expect(run.phase).toBe('defeat');
     expect(run.defeatCause).toBe('liquidation');
@@ -110,10 +120,11 @@ describe('séance', () => {
 
   it('refuse les ordres hors règles', () => {
     const run = startedRun();
-    expect(() => openPosition(run, order({ stake: 5 }))).toThrow('Mise minimale');
-    expect(() => openPosition(run, order({ stake: 2000 }))).toThrow('dépasse');
     expect(() => openPosition(run, order({ cardIndices: [0, 1, 2, 3] }))).toThrow('3 cartes');
+    expect(() => openPosition(run, order({ cardIndices: [1, 1] }))).toThrow('deux fois');
     expect(() => openPosition(run, order({ duration: 1 }))).toThrow('Durée');
+    run.capital = 15; // Prudent : mise de 7,50 $
+    expect(() => openPosition(run, order({ size: 'prudent' }))).toThrow('Mise minimale');
   });
 
   it('le capital persiste d’une séance à l’autre', () => {
@@ -128,11 +139,23 @@ describe('séance', () => {
     expect(run.phase).toBe('briefing');
   });
 
-  it('la même graine donne les mêmes marchés, quels que soient les choix', () => {
+  it('la même graine donne le même marché ; défausser ou passer ne le change pas', () => {
     const a = startedRun(77);
     const b = startedRun(77);
     discardCards(b, [0]);
     expect(a.seance!.market.candles).toEqual(b.seance!.market.candles);
+    passCandle(a);
+    passCandle(b);
+    expect(a.seance!.market.candles).toEqual(b.seance!.market.candles);
+  });
+
+  it('la même graine et les mêmes ordres donnent les mêmes trades', () => {
+    const play = () => {
+      const run = startedRun(77);
+      const records = [openPosition(run, order()), openPosition(run, order({ direction: 'short', size: 'prudent' }))];
+      return { records: records.map((r) => [r.chance.value, r.trade.exitReason, r.pnlNet]), candles: run.seance!.market.candles };
+    };
+    expect(play()).toEqual(play());
   });
 
   it('victoire après la séance 8', () => {

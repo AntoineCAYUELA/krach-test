@@ -78,12 +78,13 @@ describe('stress pendant la run', () => {
   it('chaque trade enregistre son stress ; l’état de la séance ne change pas en cours de séance', () => {
     const run = scriptedRun(flatHistory(), steadyFuture(-0.01, 6));
     run.seance!.quota = 1e9;
-    const record = openPosition(run, order({ stake: 1000, leverage: 2 }));
-    // Perte d'environ 6 % du capital : 3 + 1,5 × 6,x ≈ 12 à 13 points.
+    const record = openPosition(run, order());
+    // Stop-loss touché : perte d'environ 3,3 % du capital, soit 3 + 1,5 × 3,3 ≈ 8 points.
+    expect(record.trade.exitReason).toBe('stopLoss');
     expect(record.stress!.delta).toBe(Math.round(3 + 1.5 * ((-record.pnlNet / 1000) * 100)));
     expect(record.stress!.after).toBe(15 + record.stress!.delta);
     run.life!.stress = 90;
-    const second = openPosition(run, order({ stake: 500, leverage: 1 }));
+    const second = openPosition(run, order({ size: 'prudent' }));
     expect(second.multi.terms.some((t) => t.label.startsWith('Stress'))).toBe(false);
   });
 

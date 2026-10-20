@@ -5,7 +5,7 @@
 import { CONFIG } from '../config.ts';
 import { fmt } from '../format.ts';
 import { snapshot, sma, type IndicatorSnapshot } from './indicators.ts';
-import type { Candle, CardFamily, CardId, Direction, ToolId } from './types.ts';
+import type { Candle, CardFamily, CardId, CardRole, Direction, ToolId } from './types.ts';
 
 /** Direction d'une carte : fixe, ou déduite de la bougie t / des 3 dernières bougies. */
 export type CardDirection = Direction | 'lastCandle' | 'lastThree';
@@ -14,6 +14,8 @@ export interface CardDef {
   id: CardId;
   name: string;
   family: CardFamily;
+  /** Retournement ou continuation : décide du bonus de chance selon le contexte (GDD 2.7). */
+  role: CardRole;
   direction: CardDirection;
   /** Condition lisible, affichée sur la carte. */
   rule: string;
@@ -24,23 +26,28 @@ export interface CardDef {
 const C = CONFIG.cards;
 
 export const CARDS: Record<CardId, CardDef> = {
-  hammer: { id: 'hammer', name: 'Marteau', family: 'candlestick', direction: 'long', rule: `Mèche basse ≥ ${C.wickBodyRatio} × corps, mèche haute ≤ corps, Close < MM20`, startingCount: 1 },
-  shootingStar: { id: 'shootingStar', name: 'Étoile filante', family: 'candlestick', direction: 'short', rule: `Mèche haute ≥ ${C.wickBodyRatio} × corps, mèche basse ≤ corps, Close > MM20`, startingCount: 1 },
-  bullishEngulfing: { id: 'bullishEngulfing', name: 'Avalement haussier', family: 'candlestick', direction: 'long', rule: 'Bougie rouge puis verte dont le corps englobe le précédent', startingCount: 1 },
-  bearishEngulfing: { id: 'bearishEngulfing', name: 'Avalement baissier', family: 'candlestick', direction: 'short', rule: 'Bougie verte puis rouge dont le corps englobe le précédent', startingCount: 1 },
-  rsiOversold: { id: 'rsiOversold', name: 'RSI survendu', family: 'indicator', direction: 'long', rule: `RSI < ${C.rsiOversold}`, startingCount: 2 },
-  rsiOverbought: { id: 'rsiOverbought', name: 'RSI suracheté', family: 'indicator', direction: 'short', rule: `RSI > ${C.rsiOverbought}`, startingCount: 2 },
-  goldenCross: { id: 'goldenCross', name: 'Golden cross', family: 'indicator', direction: 'long', rule: `MM5 passe au-dessus de MM20 (sur les ${CONFIG.indicators.crossLookback} dernières bougies)`, startingCount: 1 },
-  deathCross: { id: 'deathCross', name: 'Death cross', family: 'indicator', direction: 'short', rule: `MM5 passe sous MM20 (sur les ${CONFIG.indicators.crossLookback} dernières bougies)`, startingCount: 1 },
-  supportBounce: { id: 'supportBounce', name: 'Rebond sur support', family: 'level', direction: 'long', rule: 'Le Low touche le support (±1 %) et le Close reste au-dessus', startingCount: 2 },
-  resistanceRejection: { id: 'resistanceRejection', name: 'Rejet de résistance', family: 'level', direction: 'short', rule: 'Le High touche la résistance (±1 %) et le Close reste en dessous', startingCount: 2 },
-  bullishBreakout: { id: 'bullishBreakout', name: 'Cassure haussière', family: 'level', direction: 'long', rule: 'Close au-dessus de la résistance', startingCount: 1 },
-  bearishBreakout: { id: 'bearishBreakout', name: 'Cassure baissière', family: 'level', direction: 'short', rule: 'Close sous le support', startingCount: 1 },
-  volumeSpike: { id: 'volumeSpike', name: 'Pic de volume', family: 'volume', direction: 'lastCandle', rule: `Volume ≥ ${C.volumeSpikeRatio} × moyenne ; long si bougie verte, short si rouge`, startingCount: 2 },
-  volumeConfirmation: { id: 'volumeConfirmation', name: 'Volume confirmant', family: 'volume', direction: 'lastThree', rule: `Volume moyen des ${C.volumeConfirmCandles} dernières bougies ≥ ${fmt(C.volumeConfirmRatio, 1)} × moyenne, dans le sens du prix`, startingCount: 2 },
+  hammer: { id: 'hammer', name: 'Marteau', family: 'candlestick', role: 'reversal', direction: 'long', rule: `Mèche basse ≥ ${C.wickBodyRatio} × corps, mèche haute ≤ corps, Close < MM20`, startingCount: 1 },
+  shootingStar: { id: 'shootingStar', name: 'Étoile filante', family: 'candlestick', role: 'reversal', direction: 'short', rule: `Mèche haute ≥ ${C.wickBodyRatio} × corps, mèche basse ≤ corps, Close > MM20`, startingCount: 1 },
+  bullishEngulfing: { id: 'bullishEngulfing', name: 'Avalement haussier', family: 'candlestick', role: 'reversal', direction: 'long', rule: 'Bougie rouge puis verte dont le corps englobe le précédent', startingCount: 1 },
+  bearishEngulfing: { id: 'bearishEngulfing', name: 'Avalement baissier', family: 'candlestick', role: 'reversal', direction: 'short', rule: 'Bougie verte puis rouge dont le corps englobe le précédent', startingCount: 1 },
+  rsiOversold: { id: 'rsiOversold', name: 'RSI survendu', family: 'indicator', role: 'reversal', direction: 'long', rule: `RSI < ${C.rsiOversold}`, startingCount: 2 },
+  rsiOverbought: { id: 'rsiOverbought', name: 'RSI suracheté', family: 'indicator', role: 'reversal', direction: 'short', rule: `RSI > ${C.rsiOverbought}`, startingCount: 2 },
+  goldenCross: { id: 'goldenCross', name: 'Golden cross', family: 'indicator', role: 'continuation', direction: 'long', rule: `MM5 passe au-dessus de MM20 (sur les ${CONFIG.indicators.crossLookback} dernières bougies)`, startingCount: 1 },
+  deathCross: { id: 'deathCross', name: 'Death cross', family: 'indicator', role: 'continuation', direction: 'short', rule: `MM5 passe sous MM20 (sur les ${CONFIG.indicators.crossLookback} dernières bougies)`, startingCount: 1 },
+  supportBounce: { id: 'supportBounce', name: 'Rebond sur support', family: 'level', role: 'reversal', direction: 'long', rule: 'Le Low touche le support (±1 %) et le Close reste au-dessus', startingCount: 2 },
+  resistanceRejection: { id: 'resistanceRejection', name: 'Rejet de résistance', family: 'level', role: 'reversal', direction: 'short', rule: 'Le High touche la résistance (±1 %) et le Close reste en dessous', startingCount: 2 },
+  bullishBreakout: { id: 'bullishBreakout', name: 'Cassure haussière', family: 'level', role: 'continuation', direction: 'long', rule: 'Close au-dessus de la résistance', startingCount: 1 },
+  bearishBreakout: { id: 'bearishBreakout', name: 'Cassure baissière', family: 'level', role: 'continuation', direction: 'short', rule: 'Close sous le support', startingCount: 1 },
+  volumeSpike: { id: 'volumeSpike', name: 'Pic de volume', family: 'volume', role: 'continuation', direction: 'lastCandle', rule: `Volume ≥ ${C.volumeSpikeRatio} × moyenne ; long si bougie verte, short si rouge`, startingCount: 2 },
+  volumeConfirmation: { id: 'volumeConfirmation', name: 'Volume confirmant', family: 'volume', role: 'continuation', direction: 'lastThree', rule: `Volume moyen des ${C.volumeConfirmCandles} dernières bougies ≥ ${fmt(C.volumeConfirmRatio, 1)} × moyenne, dans le sens du prix`, startingCount: 2 },
 };
 
 export const CARD_IDS = Object.keys(CARDS) as CardId[];
+
+export const ROLE_NAMES: Record<CardRole, string> = {
+  reversal: 'Retournement',
+  continuation: 'Continuation',
+};
 
 export const FAMILY_NAMES: Record<CardFamily, string> = {
   candlestick: 'Chandelier',

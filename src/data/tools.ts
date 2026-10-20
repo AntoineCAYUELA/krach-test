@@ -15,16 +15,19 @@ export interface ToolDef {
 
 const T = CONFIG.tools;
 
+/** Chance de base selon la distance du take-profit, en unités u (GDD 2.7). */
+const baseChance = (takeUnits: number) => CONFIG.forecast.stopUnits / (CONFIG.forecast.stopUnits + takeUnits);
+
 export const TOOLS: Record<ToolId, ToolDef> = {
   stopLoss: {
     id: 'stopLoss', name: 'Stop-loss discipliné', rarity: T.stopLoss.rarity, price: T.stopLoss.price,
-    effect: `Chaque position reçoit un stop-loss automatique à −${pct(T.stopLoss.stopPct, 0)} (sauf si tu en as fixé un plus proche). +${T.stopLoss.primesPerStop} P par position fermée par ce stop.`,
-    concept: 'Le stop-loss limite la perte maximale d’un trade.',
+    effect: `Un trade fermé au stop-loss ne retire que ${fmt(T.stopLoss.lossFactor * 100, 0)} % de sa perte à la Performance, au lieu de ${fmt(CONFIG.scoring.lossFactor * 100, 0)} %. +${T.stopLoss.primesPerStop} P par position fermée au stop-loss.`,
+    concept: 'Une perte coupée au stop-loss est une perte maîtrisée : elle fait partie du métier.',
   },
   takeProfit: {
     id: 'takeProfit', name: 'Take-profit méthodique', rarity: T.takeProfit.rarity, price: T.takeProfit.price,
-    effect: `Chaque position reçoit un take-profit automatique à +${pct(T.takeProfit.takePct, 0)}. +${T.takeProfit.multiBonus} Multi sur les trades fermés par ce take-profit.`,
-    concept: 'Le take-profit sécurise un gain avant un retournement.',
+    effect: `Take-profit à ${fmt(T.takeProfit.takeUnits, 0)} u au lieu de ${fmt(CONFIG.forecast.takeUnits, 1)} u : ratio risque/rendement de ${fmt(T.takeProfit.takeUnits / CONFIG.forecast.stopUnits, 0)}, la chance de base passe de ${pct(baseChance(CONFIG.forecast.takeUnits), 0)} à ${pct(baseChance(T.takeProfit.takeUnits), 0)}.`,
+    concept: 'Viser plus loin rapporte plus par trade gagnant, mais on gagne moins souvent.',
   },
   lowCostBroker: {
     id: 'lowCostBroker', name: 'Courtier low-cost', rarity: T.lowCostBroker.rarity, price: T.lowCostBroker.price,
@@ -58,8 +61,8 @@ export const TOOLS: Record<ToolId, ToolDef> = {
   },
   leverage: {
     id: 'leverage', name: 'Effet de levier', rarity: T.leverage.rarity, price: T.leverage.price,
-    effect: `Levier maximal : ×${Math.max(...CONFIG.trade.baseLeverages)} → ×${Math.max(...CONFIG.trade.toolLeverages)}.`,
-    concept: 'Le levier multiplie gains ET pertes, et rapproche le prix de liquidation.',
+    effect: `Taille Agressif : levier ×${CONFIG.sizes.aggressive.leverage} → ×${CONFIG.sizes.aggressive.toolLeverage}.`,
+    concept: 'Le levier multiplie gains ET pertes : à ×5, chaque stop-loss coûte environ 15 % du capital.',
   },
   shortSeller: {
     id: 'shortSeller', name: 'Vendeur à découvert', rarity: T.shortSeller.rarity, price: T.shortSeller.price,
@@ -73,12 +76,12 @@ export const TOOLS: Record<ToolId, ToolDef> = {
   },
   scalper: {
     id: 'scalper', name: 'Scalpeur', rarity: T.scalper.rarity, price: T.scalper.price,
-    effect: `Débloque les positions d’${CONFIG.seance.scalpDuration} bougie (1 ordre, ${CONFIG.seance.scalpDuration} bougie de temps). +${T.scalper.multiBonus} Multi sur ces positions.`,
+    effect: `Débloque les positions d’${CONFIG.seance.scalpDuration} bougie (1 ordre, ${CONFIG.seance.scalpDuration} bougie de temps, stop-loss et take-profit plus proches : u × √(1/3)). +${T.scalper.multiBonus} Multi sur ces positions.`,
     concept: 'Le scalping multiplie les trades courts ; les frais pèsent lourd.',
   },
   twoPercentRule: {
     id: 'twoPercentRule', name: 'Règle des 2 %', rarity: T.twoPercentRule.rarity, price: T.twoPercentRule.price,
-    effect: `×${T.twoPercentRule.multiFactor} Multi si le risque du trade (notionnel × distance du stop-loss) ≤ ${pct(T.twoPercentRule.maxRiskPct, 0)} du capital. Sans stop-loss : aucun effet.`,
+    effect: `×${T.twoPercentRule.multiFactor} Multi si le risque du trade (notionnel × distance du stop-loss) ≤ ${pct(T.twoPercentRule.maxRiskPct, 0)} du capital.`,
     concept: 'Gestion du risque : ne jamais risquer plus de 1 à 2 % du capital par trade.',
   },
   tradingJournal: {

@@ -5,9 +5,9 @@ import { CONFIG } from '../../config.ts';
 import { CARDS } from '../../engine/cards.ts';
 import { SETUPS } from '../../data/life.ts';
 import { STRESS_NAMES } from '../../engine/life.ts';
-import { finishSummary, REGIME_NAMES, type RunState } from '../../engine/run.ts';
+import { finishSummary, REGIME_NAMES, SIZE_NAMES, type RunState } from '../../engine/run.ts';
 import { SETUP_NAMES } from '../../engine/scoring.ts';
-import { fmt, money, signed } from '../../format.ts';
+import { fmt, money, pct, signed } from '../../format.ts';
 import type { App, View } from '../app.ts';
 import { COLORS, drawChart, type CandleMarker } from '../chart.ts';
 import { attempt, DIRECTION_LABELS, stat, stressGauge, topBar } from '../components.ts';
@@ -51,9 +51,10 @@ export function renderSummary(app: App, run: RunState): View {
       'tr',
       null,
       h('td', null, String(t.number)),
-      h('td', null, `${DIRECTION_LABELS[t.direction]} ×${t.trade.order.leverage}`),
+      h('td', null, `${DIRECTION_LABELS[t.direction]} ${SIZE_NAMES[t.size].toLowerCase()} ×${t.trade.order.leverage}`),
       h('td', null, t.playedCards.length > 0 ? t.playedCards.map((id) => CARDS[id].name).join(', ') : '—'),
       h('td', null, SETUP_NAMES[t.setup.type]),
+      h('td', null, `${pct(t.chance.value, 0)} : ${t.trade.exitReason === 'takeProfit' ? 'take-profit' : t.trade.exitReason === 'stopLoss' ? 'stop-loss' : t.trade.exitReason === 'liquidation' ? 'liquidation' : 'fin'}${t.trade.gapped ? ' (gap)' : ''}`),
       h('td', { class: t.pnlNet >= 0 ? 'gain' : 'loss' }, `${signed(t.pnlNet)} $`),
       h('td', null, signed(t.score.performance)),
       t.stress ? h('td', { class: t.stress.delta > 0 ? 'loss' : 'gain' }, signed(t.stress.delta, 0)) : null,
@@ -142,7 +143,7 @@ export function renderSummary(app: App, run: RunState): View {
           h(
             'table',
             { class: 'trades' },
-            h('tr', null, ['N°', 'Position', 'Cartes', 'Setup', 'P&L net', 'Performance', ...(stress ? ['Stress'] : [])].map((label) => h('th', null, label))),
+            h('tr', null, ['N°', 'Position', 'Cartes', 'Setup', 'Chance : issue', 'P&L net', 'Performance', ...(stress ? ['Stress'] : [])].map((label) => h('th', null, label))),
             trades,
           ),
         ),

@@ -1,8 +1,11 @@
 // Ouverture et résolution d'une position (GDD 5.1 et 5.2).
-// Ordre de vérification à chaque bougie : gap à l'ouverture, stop-loss, liquidation, take-profit.
+// En jeu, l'issue (take-profit ou stop-loss) est tirée avec la chance affichée, puis le marché
+// génère un chemin qui la respecte (GDD 2.7). Sur un marché scripté (tests), les bougies sont
+// fixées et l'ordre de vérification à chaque bougie s'applique : gap à l'ouverture, stop-loss,
+// liquidation, take-profit.
 
 import { CONFIG } from '../config.ts';
-import { advanceMarket, lastCandle, type MarketState } from './market.ts';
+import { advanceMarket, advanceMarketForTrade, lastCandle, type MarketState } from './market.ts';
 import { directionSign, type Candle, type Direction } from './types.ts';
 
 export interface TradeCosts {
@@ -97,18 +100,27 @@ export function previewTrade(close: number, order: TradeOrder, costs: TradeCosts
  * et ferme la position. Le marché avance toujours de `duration` bougies, même si la position est
  * fermée plus tôt : le temps est consommé (GDD 2.3 étape 7).
  */
-export function resolveTrade(market: MarketState, order: TradeOrder, costs: TradeCosts): TradeResult {
+export function resolveTrade(market: MarketState, order: TradeOrder, costs: TradeCosts, win?: boolean): TradeResult {
   const d = directionSign(order.direction);
   const preview = previewTrade(lastCandle(market).c, order, costs);
   const entry = preview.entryPrice;
-  const candles: Candle[] = [];
+  let candles: Candle[] = [];
 
   let exitPrice: number | null = null;
   let exitReason: ExitReason = 'time';
   let gapped = false;
   let exitOffset = order.duration - 1;
 
-  for (let k = 0; k < order.duration; k++) {
+  if (win !== undefined && !market.scripted && preview.stopPrice !== null && preview.takePrice !== null) {
+    const path = advanceMarketForTrade(market, { direction: order.direction, stopPrice: preview.stopPrice, takePrice: preview.takePrice, win, duration: order.duration });
+    candles = path.candles;
+    exitPrice = path.exitPrice;
+    exitReason = path.reason;
+    gapped = path.gapped;
+    exitOffset = path.exitOffset;
+  }
+
+  for (let k = 0; k < order.duration && candles.length < order.duration; k++) {
     const candle = advanceMarket(market);
     candles.push(candle);
     if (exitPrice !== null) continue;

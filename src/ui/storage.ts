@@ -51,7 +51,7 @@ function remove(key: string): void {
 /** Run sauvegardée, ou null si absente ou d'un format inconnu (elle est alors ignorée). */
 export function loadRun(): RunState | null {
   const run = read<RunState>('run');
-  if (!run || run.version !== 2 || typeof run.phase !== 'string' || !Array.isArray(run.deck) || !run.seance) return null;
+  if (!run || run.version !== 3 || typeof run.phase !== 'string' || !Array.isArray(run.deck) || !run.seance) return null;
   return run;
 }
 

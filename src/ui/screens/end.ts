@@ -5,7 +5,7 @@
 import { CONFIG } from '../../config.ts';
 import { GLOSSARY } from '../../data/glossary.ts';
 import { HOMES, SETUPS } from '../../data/life.ts';
-import type { RunState } from '../../engine/run.ts';
+import { SIZE_NAMES, type RunState } from '../../engine/run.ts';
 import { euros, fmt, money, pct, signed } from '../../format.ts';
 import type { App, View } from '../app.ts';
 import { DIRECTION_LABELS, stat, topBar } from '../components.ts';
@@ -13,23 +13,25 @@ import { h, type Child } from '../dom.ts';
 import { seenTerms, term } from '../tooltip.ts';
 
 function marginCallChain(run: RunState): Child {
-  const trade = run.seance?.trades[run.seance.trades.length - 1];
+  const trades = run.seance?.trades ?? [];
+  const trade = trades[trades.length - 1];
   if (!trade) return h('p', null, `Le capital est passé sous la mise minimale de ${CONFIG.run.minStake} $.`);
   const tr = trade.trade;
-  const liquidated = tr.exitReason === 'liquidation';
+  const losses = trades.filter((t) => t.pnlNet < 0);
+  const lost = losses.reduce((sum, t) => sum + t.pnlNet, 0);
+  const exit: Child =
+    tr.exitReason === 'liquidation'
+      ? ['Un ', term('gap'), ' de news a sauté le stop-loss : la perte a atteint ', term('liquidation', 'la liquidation'), `, toute la mise est perdue (${signed(trade.pnlNet)} $).`]
+      : tr.gapped
+        ? ['Un ', term('gap'), ` de news a sauté le stop-loss : sortie à l’ouverture, perte de ${signed(trade.pnlNet)} $ (`, term('slippage'), ').']
+        : [term('stop-loss', 'Stop-loss'), ` touché : perte de ${signed(trade.pnlNet)} $, soit ${pct(-trade.pnlNet / trade.capitalBefore, 1)} du capital.`];
   return h(
     'ol',
     { class: 'chain' },
-    h('li', null, `Position ${DIRECTION_LABELS[trade.direction].toLowerCase()} : `, term('mise'), ` de ${money(tr.order.stake)} (${pct(tr.order.stake / trade.capitalBefore, 0)} du capital).`),
+    h('li', null, `Dernière position : ${DIRECTION_LABELS[trade.direction].toLowerCase()} ${SIZE_NAMES[trade.size]}, `, term('mise'), ` de ${money(tr.order.stake)} (${pct(tr.order.stake / trade.capitalBefore, 0)} du capital).`),
     h('li', null, term('levier', 'Levier'), ` ×${tr.order.leverage} : `, term('notionnel'), ` de ${money(tr.notional)}, entrée à ${money(tr.entryPrice)}.`),
-    h(
-      'li',
-      null,
-      'Prix de ',
-      term('liquidation', 'liquidation'),
-      ` : ${money(tr.liquidationPrice)}, soit ${signed((tr.liquidationPrice / tr.entryPrice - 1) * 100, 1)} % (${pct(CONFIG.trade.liquidationThreshold, 0)} de la mise ÷ levier ${tr.order.leverage}).`,
-    ),
-    h('li', null, liquidated ? `Le prix l’a atteint : toute la mise est perdue (${signed(trade.pnlNet)} $).` : `Perte du trade : ${signed(trade.pnlNet)} $.`),
+    h('li', null, exit),
+    h('li', null, `Pertes successives de la séance : ${losses.length} trade${losses.length > 1 ? 's' : ''} perdant${losses.length > 1 ? 's' : ''}, ${signed(lost)} $ au total.`),
     h('li', null, `Capital restant : ${money(run.capital)}, sous la mise minimale de ${CONFIG.run.minStake} $. Aucun renflouement : `, term('appel-de-marge', 'margin call'), '.'),
   );
 }
@@ -81,7 +83,7 @@ export function renderEnd(app: App, run: RunState): View {
           run.life
             ? h('p', { class: 'muted' }, `Vie du trader : stress ${fmt(run.life.stress, 0)}, épargne ${euros(run.life.savings)}, ${SETUPS[run.life.setup].name.toLowerCase()}, ${HOMES[run.life.home].name}.`)
             : null,
-          h('p', null, 'Graine de la run : ', h('strong', { class: 'seed-value' }, String(run.seed)), h('span', { class: 'muted' }, ' (la même graine redonne les mêmes marchés)')),
+          h('p', null, 'Graine de la run : ', h('strong', { class: 'seed-value' }, String(run.seed)), h('span', { class: 'muted' }, ' (la même graine redonne les mêmes actions et les mêmes départs de séance)')),
           h(
             'div',
             { class: 'end-actions' },

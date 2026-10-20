@@ -2,19 +2,25 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../src/config.ts';
 import { CARD_IDS } from '../src/engine/cards.ts';
-import { lastCandle, peekFuture } from '../src/engine/market.ts';
+import { peekFuture } from '../src/engine/market.ts';
 import { canUseConsumable, openPosition, previewPosition, signalPackOffers, useConsumable } from '../src/engine/run.ts';
 import { flatHistory, order, scriptedRun, startedRun, steadyFuture } from './runHelpers.ts';
 
 describe('les 6 consommables', () => {
-  it('Rapport d’analyste : révèle le régime de la dernière bougie', () => {
-    const run = startedRun(3);
-    run.consumables = ['analystReport'];
+  it('Rapport d’analyste : +10 % de chance sur le prochain trade seulement', () => {
+    const run = scriptedRun(flatHistory(), steadyFuture(0.01, 6));
+    const before = previewPosition(run, order()).chance.value;
+    run.consumables = ['analystReport', 'analystReport'];
     const outcome = useConsumable(run, 0);
-    const regime = lastCandle(run.seance!.market).regime;
-    expect(run.seance!.revealedRegime).toEqual({ candleCount: run.seance!.market.candles.length, regime });
-    expect(outcome.message).toContain(regime === 'range' ? 'range' : regime === 'bull' ? 'bull' : 'bear');
-    expect(run.consumables).toEqual([]);
+    expect(outcome.message).toContain('+10 %');
+    expect(canUseConsumable(run, 'analystReport')).toBe(false);
+    const boosted = previewPosition(run, order()).chance;
+    expect(boosted.value).toBeCloseTo(before + 0.1, 12);
+    expect(boosted.terms).toContainEqual({ label: 'Rapport d’analyste', value: 10 });
+    const record = openPosition(run, order());
+    expect(record.chance.value).toBeCloseTo(before + 0.1, 12);
+    expect(run.seance!.analystBoost).toBe(false);
+    expect(previewPosition(run, order()).chance.value).toBeCloseTo(before, 12);
   });
 
   it('Formation : +0,5 Multi permanent sur le setup choisi', () => {
@@ -64,13 +70,22 @@ describe('les 6 consommables', () => {
     expect(run.seance!.orders).toBe(CONFIG.seance.orders + 1);
   });
 
-  it('Boule de cristal : donne la couleur de la prochaine bougie, sans changer le marché', () => {
-    const run = startedRun(5);
-    const next = peekFuture(run.seance!.market, 0)!;
-    run.consumables = ['crystalBall'];
-    useConsumable(run, 0);
-    expect(run.seance!.crystalBall?.bullish).toBe(next.c > next.o);
-    expect(peekFuture(run.seance!.market, 0)).toEqual(next);
+  it('Boule de cristal : montre l’issue du prochain trade, sans changer le marché', () => {
+    for (let seed = 1; seed <= 20; seed++) {
+      const plain = startedRun(seed);
+      const run = startedRun(seed);
+      const next = peekFuture(run.seance!.market, 0)!;
+      expect(previewPosition(run, order()).crystal).toBeNull();
+      run.consumables = ['crystalBall'];
+      useConsumable(run, 0);
+      expect(peekFuture(run.seance!.market, 0)).toEqual(next);
+      const crystal = previewPosition(run, order()).crystal;
+      expect(crystal).toBe(run.seance!.roll < previewPosition(run, order()).chance.value ? 'takeProfit' : 'stopLoss');
+      const record = openPosition(run, order());
+      if (!record.trade.gapped) expect(record.trade.exitReason).toBe(crystal);
+      expect(record.trade.candles).toEqual(openPosition(plain, order()).trade.candles);
+      expect(run.seance!.crystalBall).toBe(false);
+    }
   });
 
   it('en boutique, seuls Formation et Pack de signaux sont utilisables', () => {

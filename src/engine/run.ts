@@ -5,10 +5,11 @@ import { CONFIG } from '../config.ts';
 import { RANDOM_EVENT_IDS } from '../data/events.ts';
 import { CARD_IDS, cardContext, checkCard, startingDeck, type CardCheck, type CardContext } from './cards.ts';
 import { advanceMarket, createMarket, lastCandle, peekFuture, type MarketState } from './market.ts';
-import { createRng, deriveSeed, pick, shuffle, type RngState } from './rng.ts';
+import { createRng, deriveSeed, nextFloat, pick, shuffle, type RngState } from './rng.ts';
+import { computeChance, marketContext, riskUnit, type Chance } from './forecast.ts';
 import { addPerformance, classifySetup, computeMulti, scoreTrade, type MultiBreakdown, type SetupResult, type TradeScore } from './scoring.ts';
-import { previewTrade, resolveTrade, type TradeCosts, type TradePreview, type TradeResult } from './trade.ts';
-import type { CardId, ConsumableId, Direction, EventId, Regime, SetupType, ToolId } from './types.ts';
+import { previewTrade, resolveTrade, type TradeCosts, type TradeOrder, type TradePreview, type TradeResult } from './trade.ts';
+import type { CardId, ConsumableId, Direction, EventId, MarketContext, Regime, SetupType, SizeId, ToolId } from './types.ts';
 import { GameError } from './errors.ts';
 import {
   addStress,
@@ -42,6 +43,9 @@ export interface StockInfo {
 export interface TradeRecord {
   number: number;
   direction: Direction;
+  size: SizeId;
+  /** Chance affichée au moment de l'ordre (GDD 2.7). */
+  chance: Chance;
   playedCards: CardId[];
   setup: SetupResult;
   trade: TradeResult;
@@ -85,10 +89,13 @@ export interface SeanceState {
   performance: number;
   trades: TradeRecord[];
   hedgeActive: boolean;
-  /** Rapport d'analyste : régime révélé tant que le nombre de bougies n'a pas changé. */
-  revealedRegime: { candleCount: number; regime: Regime } | null;
-  /** Boule de cristal : couleur de la prochaine bougie. */
-  crystalBall: { candleCount: number; bullish: boolean } | null;
+  /** Rapport d'analyste : bonus de chance sur le prochain trade. */
+  analystBoost: boolean;
+  /** Boule de cristal : l'issue du prochain trade est visible sur le ticket. */
+  crystalBall: boolean;
+  /** Tirage (0 à 1) du prochain trade : take-profit si tirage < chance (GDD 2.7). */
+  roll: number;
+  rollRng: RngState;
   capitalAtStart: number;
   status: 'playing' | 'won' | 'lost' | 'liquidated';
   rewards: SeanceRewards | null;
@@ -113,7 +120,7 @@ export interface ShopState {
 }
 
 export interface RunState {
-  version: 2;
+  version: 3;
   seed: number;
   phase: RunPhase;
   defeatCause: DefeatCause | null;
@@ -151,7 +158,7 @@ export interface RunOptions {
 
 export function createRun(seed: number, options: RunOptions = {}): RunState {
   const run: RunState = {
-    version: 2,
+    version: 3,
     seed,
     phase: 'briefing',
     defeatCause: null,
@@ -208,6 +215,7 @@ function prepareSeance(run: RunState): SeanceState {
   };
   const market = createMarket(params, deriveSeed(run.seed, 'market', index));
   const rng = createRng(deriveSeed(run.seed, 'deck', index));
+  const rollRng = createRng(deriveSeed(run.seed, 'roll', index));
   const seance: SeanceState = {
     index,
     quota: CONFIG.run.quotas[index] ?? Infinity,
@@ -224,8 +232,10 @@ function prepareSeance(run: RunState): SeanceState {
     performance: 0,
     trades: [],
     hedgeActive: false,
-    revealedRegime: null,
-    crystalBall: null,
+    analystBoost: false,
+    crystalBall: false,
+    roll: nextFloat(rollRng),
+    rollRng,
     capitalAtStart: run.capital,
     status: 'playing',
     rewards: null,
@@ -265,8 +275,28 @@ export function currentCosts(run: RunState): TradeCosts {
   };
 }
 
-export function allowedLeverages(run: RunState): readonly number[] {
-  return hasTool(run, 'leverage') ? CONFIG.trade.toolLeverages : CONFIG.trade.baseLeverages;
+export const SIZE_NAMES: Record<SizeId, string> = { prudent: 'Prudent', normal: 'Normal', aggressive: 'Agressif' };
+
+/** Mise et levier d'une taille de position (GDD 2.3). */
+export function sizeOrder(run: RunState, size: SizeId): { stake: number; leverage: number } {
+  const def = CONFIG.sizes[size];
+  const leverage = size === 'aggressive' && hasTool(run, 'leverage') ? CONFIG.sizes.aggressive.toolLeverage : def.leverage;
+  return { stake: run.capital * def.stakePct, leverage };
+}
+
+/** Distances du stop-loss et du take-profit, en unités de risque u (GDD 2.7). */
+export function bracketUnits(run: RunState): { stop: number; take: number } {
+  return {
+    stop: CONFIG.forecast.stopUnits,
+    take: hasTool(run, 'takeProfit') ? CONFIG.tools.takeProfit.takeUnits : CONFIG.forecast.takeUnits,
+  };
+}
+
+/** Contexte de marché visible sur la dernière bougie close (GDD 2.7). */
+export function currentContext(run: RunState): MarketContext {
+  const ctx = handContext(run);
+  const last = ctx.candles[ctx.candles.length - 1];
+  return marketContext(ctx.snap, last?.c ?? 0);
 }
 
 export function allowedDurations(run: RunState): number[] {
@@ -323,11 +353,11 @@ function removeFromHand(seance: SeanceState, indices: readonly number[]): CardId
 // ---------------------------------------------------------------------------
 // Actions du tour (GDD 2.3 étape 3)
 
-/** Défausser 1 à 5 cartes et repiocher. Coût : 1 défausse. */
+/** Défausser 1 à 7 cartes et repiocher. Coût : 1 défausse. */
 export function discardCards(run: RunState, indices: readonly number[]): void {
   const seance = requireSeance(run);
   if (seance.discards <= 0) throw new GameError('Plus de défausse disponible');
-  if (indices.length < 1 || indices.length > CONFIG.seance.handSize) throw new GameError('Choisis de 1 à 5 cartes');
+  if (indices.length < 1 || indices.length > CONFIG.seance.handSize) throw new GameError(`Choisis de 1 à ${CONFIG.seance.handSize} cartes`);
   const removed = removeFromHand(seance, indices);
   seance.discardPile.push(...removed);
   seance.discards--;
@@ -345,42 +375,29 @@ export function passCandle(run: RunState): void {
 
 export interface PositionInput {
   direction: Direction;
-  stake: number;
-  leverage: number;
-  /** Stop-loss choisi par le joueur (fraction), ou null. */
-  stopLossPct: number | null;
-  takeProfitPct: number | null;
+  size: SizeId;
   duration: number;
   /** Index des cartes de la main jouées (0 à 3). */
   cardIndices: number[];
 }
 
-interface Protection {
-  pct: number | null;
-  fromTool: boolean;
-}
-
-/** Stop automatique de l'Outil, sauf si le joueur en a fixé un plus proche. */
-function effectiveStop(run: RunState, playerPct: number | null): Protection {
-  if (!hasTool(run, 'stopLoss')) return { pct: playerPct, fromTool: false };
-  const toolPct = CONFIG.tools.stopLoss.stopPct;
-  return playerPct !== null && playerPct < toolPct ? { pct: playerPct, fromTool: false } : { pct: toolPct, fromTool: true };
-}
-
-function effectiveTake(run: RunState, playerPct: number | null): Protection {
-  if (!hasTool(run, 'takeProfit')) return { pct: playerPct, fromTool: false };
-  const toolPct = CONFIG.tools.takeProfit.takePct;
-  return playerPct !== null && playerPct < toolPct ? { pct: playerPct, fromTool: false } : { pct: toolPct, fromTool: true };
-}
-
 export interface PositionPreview {
   preview: TradePreview;
-  stop: Protection;
-  take: Protection;
+  /** Ordre envoyé au moteur de résolution (mise, levier, distances du stop et du take-profit). */
+  order: TradeOrder;
+  chance: Chance;
   setup: SetupResult;
-  /** Multi hors bonus qui dépendent de la sortie (Take-profit méthodique). */
   multi: MultiBreakdown;
   twoPercentOk: boolean;
+  /** P&L net au take-profit (> 0) et au stop-loss (< 0), avant Couverture. */
+  gainAtTake: number;
+  lossAtStop: number;
+  /** Espérance de gain : chance × gain + (1 − chance) × perte, avant Couverture. */
+  expectancy: number;
+  /** Risque du trade (perte au stop) en fraction du capital. */
+  riskPct: number;
+  /** Boule de cristal : issue prévue pour ce ticket (hors news), sinon null. */
+  crystal: 'takeProfit' | 'stopLoss' | null;
   /** Raison qui empêche d'ouvrir la position, ou null. */
   error: string | null;
 }
@@ -388,65 +405,88 @@ export interface PositionPreview {
 export function previewPosition(run: RunState, input: PositionInput): PositionPreview {
   const seance = run.seance;
   if (!seance) throw new GameError('Aucune séance');
-  const stop = effectiveStop(run, input.stopLossPct);
-  const take = effectiveTake(run, input.takeProfitPct);
-  const order = { direction: input.direction, stake: input.stake, leverage: input.leverage, stopLossPct: stop.pct, takeProfitPct: take.pct, duration: input.duration };
-  const preview = previewTrade(lastCandle(seance.market).c, order, currentCosts(run));
+  const costs = currentCosts(run);
+  const { stake, leverage } = sizeOrder(run, input.size);
+  const units = bracketUnits(run);
+  const u = riskUnit(seance.market.params.sigma, input.duration);
+  const order: TradeOrder = { direction: input.direction, stake, leverage, stopLossPct: units.stop * u, takeProfitPct: units.take * u, duration: input.duration };
+  const preview = previewTrade(lastCandle(seance.market).c, order, costs);
   const ctx = handContext(run);
   const played = input.cardIndices.map((i) => seance.hand[i]).filter((id): id is CardId => id !== undefined);
   const valid = played.filter((id) => checkCard(id, input.direction, ctx).valid);
   const setup = classifySetup(valid);
-  const twoPercentOk = stop.pct !== null && preview.notional * stop.pct <= CONFIG.tools.twoPercentRule.maxRiskPct * run.capital;
+  const chance = computeChance({
+    context: currentContext(run),
+    direction: input.direction,
+    validCards: setup.validCards,
+    stopUnits: units.stop,
+    takeUnits: units.take,
+    ...(seance.analystBoost ? { extraBonus: { label: 'Rapport d’analyste', value: CONFIG.consumables.analystReport.chanceBonus } } : {}),
+  });
+  const twoPercentOk = preview.notional * (order.stopLossPct ?? 0) <= CONFIG.tools.twoPercentRule.maxRiskPct * run.capital;
   const multi = computeMulti({
     setup,
     direction: input.direction,
     tools: run.tools,
     trendSlope: ctx.snap.trendSlope,
     duration: input.duration,
-    exitByToolTakeProfit: false,
     twoPercentOk,
     journalBonus: run.journalBonus,
     formationBonus: run.formations[setup.type] ?? 0,
     ...(seance.stress ? { stressState: seance.stress.state } : {}),
   });
-  return { preview, stop, take, setup, multi, twoPercentOk, error: positionError(run, input) };
+  const gainAtTake = netAt(preview.notional, preview.entryPrice, preview.takePrice ?? preview.entryPrice, input.direction, costs);
+  const lossAtStop = Math.max(-stake, preview.lossAtStop ?? -stake);
+  return {
+    preview,
+    order,
+    chance,
+    setup,
+    multi,
+    twoPercentOk,
+    gainAtTake,
+    lossAtStop,
+    expectancy: chance.value * gainAtTake + (1 - chance.value) * lossAtStop,
+    riskPct: run.capital > 0 ? -lossAtStop / run.capital : 0,
+    crystal: seance.crystalBall ? (seance.roll < chance.value ? 'takeProfit' : 'stopLoss') : null,
+    error: positionError(run, input, stake),
+  };
 }
 
-function positionError(run: RunState, input: PositionInput): string | null {
+/** P&L net d'une sortie à `exit` (spread et frais compris). */
+function netAt(notional: number, entry: number, exit: number, direction: Direction, costs: TradeCosts): number {
+  const d = direction === 'long' ? 1 : -1;
+  const exitAdjusted = exit * (1 - (d * costs.spread) / 2);
+  return notional * d * (exitAdjusted / entry - 1) - 2 * costs.feePerSide * notional;
+}
+
+function positionError(run: RunState, input: PositionInput, stake: number): string | null {
   const seance = run.seance;
   if (!seance || run.phase !== 'seance' || seance.status !== 'playing') return 'Aucune séance en cours';
   if (seance.orders <= 0) return 'Plus d’ordre disponible';
   if (!allowedDurations(run).includes(input.duration)) return 'Durée non autorisée';
   if (seance.candlesLeft < input.duration) return 'Pas assez de bougies restantes';
-  if (!allowedLeverages(run).includes(input.leverage)) return 'Levier non autorisé';
-  if (!(input.stake >= CONFIG.run.minStake)) return `Mise minimale : ${CONFIG.run.minStake} $`;
-  if (input.stake > run.capital + 1e-9) return 'La mise dépasse le capital';
+  if (!(input.size in CONFIG.sizes)) return 'Taille inconnue';
+  if (!(stake >= CONFIG.run.minStake)) return `Mise minimale : ${CONFIG.run.minStake} $`;
   if (input.cardIndices.length > CONFIG.seance.maxPlayedCards) return `${CONFIG.seance.maxPlayedCards} cartes maximum`;
   if (new Set(input.cardIndices).size !== input.cardIndices.length) return 'Carte jouée deux fois';
   if (input.cardIndices.some((i) => i < 0 || i >= seance.hand.length)) return 'Carte inexistante';
-  if (input.stopLossPct !== null && !(input.stopLossPct > 0 && input.stopLossPct < 1)) return 'Stop-loss invalide';
-  if (input.takeProfitPct !== null && !(input.takeProfitPct > 0)) return 'Take-profit invalide';
   return null;
 }
 
 /** Ouvre et résout une position (GDD 2.3 étapes 4 à 9). */
 export function openPosition(run: RunState, input: PositionInput): TradeRecord {
   const seance = requireSeance(run);
-  const error = positionError(run, input);
-  if (error) throw new GameError(error);
   const planned = previewPosition(run, input);
+  if (planned.error) throw new GameError(planned.error);
   const ctx = handContext(run);
   const entryCandleIndex = seance.market.candles.length - 1;
 
-  const order = {
-    direction: input.direction,
-    stake: input.stake,
-    leverage: input.leverage,
-    stopLossPct: planned.stop.pct,
-    takeProfitPct: planned.take.pct,
-    duration: input.duration,
-  };
-  const trade = resolveTrade(seance.market, order, currentCosts(run));
+  const win = seance.roll < planned.chance.value;
+  const trade = resolveTrade(seance.market, planned.order, currentCosts(run), win);
+  seance.roll = nextFloat(seance.rollRng);
+  seance.analystBoost = false;
+  seance.crystalBall = false;
   seance.candlesLeft -= input.duration;
   seance.orders--;
 
@@ -460,16 +500,16 @@ export function openPosition(run: RunState, input: PositionInput): TradeRecord {
     tools: run.tools,
     trendSlope: ctx.snap.trendSlope,
     duration: input.duration,
-    exitByToolTakeProfit: trade.exitReason === 'takeProfit' && planned.take.fromTool,
     twoPercentOk: planned.twoPercentOk,
     journalBonus: run.journalBonus,
     formationBonus: run.formations[planned.setup.type] ?? 0,
     ...(seance.stress ? { stressState: seance.stress.state } : {}),
   });
-  const score = scoreTrade(pnlNet, planned.setup.validCards.length, multi.total);
+  const disciplined = trade.exitReason === 'stopLoss' && hasTool(run, 'stopLoss');
+  const score = scoreTrade(pnlNet, multi.total, disciplined ? CONFIG.tools.stopLoss.lossFactor : CONFIG.scoring.lossFactor);
 
   let primesBonus = 0;
-  if (trade.exitReason === 'stopLoss' && planned.stop.fromTool) primesBonus = CONFIG.tools.stopLoss.primesPerStop;
+  if (trade.exitReason === 'stopLoss' && hasTool(run, 'stopLoss')) primesBonus = CONFIG.tools.stopLoss.primesPerStop;
   run.primes += primesBonus;
 
   if (hasTool(run, 'tradingJournal') && pnlNet > 0 && planned.setup.validCards.length >= CONFIG.tools.tradingJournal.minValidCards) {
@@ -482,7 +522,7 @@ export function openPosition(run: RunState, input: PositionInput): TradeRecord {
 
   let stress: TradeStress | null = null;
   if (run.life) {
-    const delta = tradeStressDelta(run.life, { pnlNet, capitalBefore, leverage: input.leverage, liquidated: trade.exitReason === 'liquidation' });
+    const delta = tradeStressDelta(run.life, { pnlNet, capitalBefore, leverage: planned.order.leverage, liquidated: trade.exitReason === 'liquidation' });
     addStress(run.life, delta);
     stress = { delta, after: run.life.stress };
   }
@@ -494,6 +534,8 @@ export function openPosition(run: RunState, input: PositionInput): TradeRecord {
   const record: TradeRecord = {
     number: seance.trades.length + 1,
     direction: input.direction,
+    size: input.size,
+    chance: planned.chance,
     playedCards,
     setup: planned.setup,
     trade,
@@ -660,6 +702,8 @@ export interface ConsumableOutcome {
 export function canUseConsumable(run: RunState, id: ConsumableId): boolean {
   if (run.phase === 'seance' && run.seance?.status === 'playing') {
     if (id === 'hedge') return !run.seance.hedgeActive;
+    if (id === 'analystReport') return !run.seance.analystBoost;
+    if (id === 'crystalBall') return !run.seance.crystalBall;
     return true;
   }
   return run.phase === 'shop' && (id === 'training' || id === 'signalPack');
@@ -681,9 +725,8 @@ export function useConsumable(run: RunState, slot: number, choice?: ConsumableCh
   switch (id) {
     case 'analystReport': {
       if (!seance) throw new GameError('Aucune séance');
-      const regime = lastCandle(seance.market).regime;
-      seance.revealedRegime = { candleCount: seance.market.candles.length, regime };
-      message = `Régime actuel : ${REGIME_NAMES[regime]}.`;
+      seance.analystBoost = true;
+      message = `Rapport lu : +${CONFIG.consumables.analystReport.chanceBonus} % de chance sur le prochain trade.`;
       break;
     }
     case 'training': {
@@ -730,11 +773,8 @@ export function useConsumable(run: RunState, slot: number, choice?: ConsumableCh
     }
     case 'crystalBall': {
       if (!seance) throw new GameError('Aucune séance');
-      const next = peekFuture(seance.market, 0);
-      if (!next) throw new GameError('Aucune bougie à révéler');
-      const bullish = next.c > next.o;
-      seance.crystalBall = { candleCount: seance.market.candles.length, bullish };
-      message = `La prochaine bougie sera ${bullish ? 'verte' : 'rouge'}.`;
+      seance.crystalBall = true;
+      message = 'L’issue du prochain trade s’affiche sur le ticket.';
       break;
     }
   }
