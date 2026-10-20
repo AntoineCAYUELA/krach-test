@@ -12,6 +12,7 @@ Jalons du prompt docs/prompt-claude-code.md.
 | 6. Autres écrans, glossaire, infobulles | Fait (9 écrans du GDD 9, glossaire G, infobulles de première rencontre, avertissement de risque ; test : glossaire = GDD 10 mot pour mot) |
 | 7. Sauvegarde, README, GitHub Pages | Fait (run sauvegardée après chaque action, graine affichée et rejouable, workflow de déploiement ; reste à activer Pages : Settings > Pages > Source = GitHub Actions) |
 | 8. Test de fumée Playwright | Fait (`npm run e2e`, aussi lancé par la CI sur chaque pull request) |
+| Addendum GDD 13 : vie du trader | Fait (stress, entracte, activités, poste, logement, vue à la première personne, revue de marché ; `npm run sim:stress` reproduit le tableau 13.7 ; 2e test Playwright) |
 
 ## Problèmes connus
 - Aucun pour l'instant.

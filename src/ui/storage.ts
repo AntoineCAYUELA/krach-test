@@ -51,7 +51,7 @@ function remove(key: string): void {
 /** Run sauvegardée, ou null si absente ou d'un format inconnu (elle est alors ignorée). */
 export function loadRun(): RunState | null {
   const run = read<RunState>('run');
-  if (!run || run.version !== 1 || typeof run.phase !== 'string' || !Array.isArray(run.deck) || !run.seance) return null;
+  if (!run || run.version !== 2 || typeof run.phase !== 'string' || !Array.isArray(run.deck) || !run.seance) return null;
   return run;
 }
 
@@ -74,11 +74,14 @@ export function saveSeenTerms(seen: Set<string>): void {
 
 export interface Settings {
   fastAnimation: boolean;
+  /** Vue à la première personne autour de l'interface (GDD 13.5). */
+  decor: boolean;
   chart: { sma5: boolean; sma20: boolean; volume: boolean; levels: boolean; rsi: boolean };
 }
 
 export const DEFAULT_SETTINGS: Settings = {
   fastAnimation: false,
+  decor: true,
   chart: { sma5: true, sma20: true, volume: true, levels: true, rsi: true },
 };
 

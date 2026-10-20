@@ -30,6 +30,7 @@ export function openOptions(app: App): void {
     content: [
       h('h3', null, 'Partie'),
       checkbox('Animation rapide des bougies (0,2 s au lieu de 0,6 s)', (s) => s.fastAnimation, (s, v) => (s.fastAnimation = v)),
+      checkbox('Décor : bureau et logement autour de l’écran (masqué automatiquement sur les petits écrans)', (s) => s.decor, (s, v) => (s.decor = v)),
       h('h3', null, 'Graphique'),
       checkbox(['MM5 (', term('moyenne-mobile', 'moyenne mobile'), ' courte)'], (s) => s.chart.sma5, (s, v) => (s.chart.sma5 = v)),
       checkbox('MM20 (moyenne mobile longue)', (s) => s.chart.sma20, (s, v) => (s.chart.sma20 = v)),

@@ -6,8 +6,10 @@ import { createRun, type RunState } from '../engine/run.ts';
 import { randomSeed } from '../engine/rng.ts';
 import { clear } from './dom.ts';
 import { closeAllModals, closeTopModal, type Modal } from './modal.ts';
+import { DECOR_QUERY, decorShown, wrapInScene } from './scene.ts';
 import { renderBriefing } from './screens/briefing.ts';
 import { renderEnd } from './screens/end.ts';
+import { renderEntracte } from './screens/entracte.ts';
 import { openGlossary } from './screens/glossary.ts';
 import { renderOnboarding } from './screens/onboarding.ts';
 import { openOptions } from './screens/options.ts';
@@ -26,6 +28,8 @@ export interface View {
   /** Appelé une fois l'élément dans la page (tailles connues : dessin du graphique). */
   mount?(): void;
   unmount?(): void;
+  /** Double écran : le même contenu réparti sur deux moniteurs (déplace les éléments de `element`). */
+  panes?(): [HTMLElement, HTMLElement];
 }
 
 export class App {
@@ -46,6 +50,8 @@ export class App {
     this.run = loadRun();
     this.screen = isOnboarded() ? 'title' : 'onboarding';
     document.addEventListener('keydown', (e) => this.onKey(e));
+    // Le décor apparaît ou disparaît quand la fenêtre passe le seuil de taille.
+    window.matchMedia(DECOR_QUERY).addEventListener('change', () => this.render());
     this.render();
   }
 
@@ -55,7 +61,8 @@ export class App {
     const view = this.buildView();
     this.view = view;
     clear(this.root);
-    this.root.appendChild(view.element);
+    const inGame = this.screen === 'game' && this.run !== null && (hasPendingTrade() || (this.run.phase !== 'victory' && this.run.phase !== 'defeat'));
+    this.root.appendChild(inGame && decorShown(this, this.run) ? wrapInScene(this.run!, view) : view.element);
     view.mount?.();
     scanTerms(this.root);
   }
@@ -76,6 +83,8 @@ export class App {
         return renderBriefing(this, run);
       case 'summary':
         return renderSummary(this, run);
+      case 'entracte':
+        return renderEntracte(this, run);
       case 'shop':
         return renderShop(this, run);
       case 'victory':

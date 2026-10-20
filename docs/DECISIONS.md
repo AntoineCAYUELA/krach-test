@@ -31,3 +31,15 @@ Points que le GDD ne précise pas, et le choix fait dans le code. Une ligne par 
 - Événements : les 8 séances et leurs événements sont visibles dès le début de la run (frise du briefing et de la boutique), comme les boss de Balatro, pour préparer ses achats.
 - Infobulles de première rencontre : une seule ouverte à la fois, les autres attendent leur tour ; un terme est marqué « vu » dès que son infobulle s'affiche ; un bouton « Tout marquer comme vu » vide la file.
 - Sans localStorage : le bouton Continuer est masqué (le prompt l'impose), même si une run est encore en mémoire.
+
+## Vie du trader (GDD 13)
+- Les 3 choix de 13.10 (épargne en € séparée, état de stress fixé au début de la séance, interface dans l'écran du poste) sont codés tels quels en attendant la confirmation d'Antoine.
+- Stress d'un trade : les parties (perte, levier, liquidation, gain) sont additionnées, puis seul un total positif est multiplié par le facteur du poste et arrondi. Un gain n'est donc jamais réduit par le poste.
+- Ordre au briefing : le +10 d'une séance à événement s'ajoute d'abord, puis l'état (calme, nerveux, tilt) est fixé. La fatigue de fin de séance (+10) ne compte que si la séance est gagnée ; une défaite termine la run.
+- Le malus de stress est un terme « × » de la décomposition du Multi, appliqué après les autres termes, pour qu'on le voie dans le détail du score.
+- Pas d'entracte après la séance 8 : la run est finie.
+- Voyage : la boutique est sautée, les Primes sont gardées. La revue de marché porte sur l'historique de la séance suivante (déjà généré par sa graine), puis disparaît quand la séance commence.
+- Décor : affiché seulement si l'option est cochée et que la fenêtre fait au moins 1 100 × 740 px. En dessous, l'écran de trading n'a plus la place pour le graphique et la main.
+- Double écran : l'écran de trading est coupé en deux (graphique et main à gauche, ticket d'ordre à droite). Sur les autres écrans, le second moniteur montre un tableau de bord (capital, Primes, épargne, stress, frise des séances, Outils).
+- Sauvegarde : version 2. Une run sauvegardée par la version 1 (sans stress) n'est pas reprise.
+- La simulation de référence (`npm run sim`, tableau 7.3) tourne sans le système de stress (`life: false`), pour rester comparable au GDD.
