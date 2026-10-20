@@ -8,7 +8,7 @@ export const CONFIG = {
     startingPrimes: 4,
     seanceCount: 8,
     /** Quotas de Performance par séance (GDD 7.1). */
-    quotas: [20, 25, 50, 80, 130, 200, 300, 450],
+    quotas: [60, 80, 120, 180, 300, 500, 800, 1300],
     /** Index (0 = séance 1) des séances à événement tirées au hasard (GDD 7.2). */
     randomEventSeances: [1, 3, 5],
     /** Index de la séance finale, toujours le Krach. */
@@ -23,7 +23,7 @@ export const CONFIG = {
     orders: 5,
     discards: 3,
     candles: 24,
-    handSize: 5,
+    handSize: 7,
     maxPlayedCards: 3,
     historyCandles: 40,
     tradeDuration: 3,
@@ -94,16 +94,39 @@ export const CONFIG = {
 
   /** GDD 2.3, 5.2 */
   trade: {
-    stakeStep: 0.1,
-    baseLeverages: [1, 2],
-    toolLeverages: [1, 2, 3, 4, 5],
     /** Liquidation quand la perte latente atteint 80 % de la mise. */
     liquidationThreshold: 0.8,
   },
 
+  /** GDD 2.3 : les 3 tailles de position (mise en fraction du capital, levier). */
+  sizes: {
+    prudent: { stakePct: 0.5, leverage: 1 },
+    normal: { stakePct: 0.5, leverage: 2 },
+    /** ×5 avec l'Outil Effet de levier. */
+    aggressive: { stakePct: 1, leverage: 2, toolLeverage: 5 },
+  },
+
+  /** GDD 2.7 : prévision affichée, stop-loss et take-profit automatiques */
+  forecast: {
+    /** Unité de risque u = 2 σ pour une position de 3 bougies, × √(durée / 3) sinon (fraction du prix). */
+    unitSigmas: 2,
+    stopUnits: 1,
+    takeUnits: 1.5,
+    /** Tendance si |pente de MM20| ≥ seuil (fraction de MM20) et Close du même côté de MM20. */
+    trendThreshold: 0.006,
+    /** Bonus de chance par carte valide, en points de pourcentage. */
+    reversal: { flat: 12, withTrend: 8, againstTrend: 0 },
+    continuation: { withTrend: 12, flat: -6, againstTrend: 0 },
+    /** Par famille de cartes valides au-delà de la première. */
+    confluencePerFamily: 4,
+    min: 0.05,
+    max: 0.85,
+    /** Point de passage du chemin conditionné : au plus tôt à 25 % des ticks de la position. */
+    earliestHit: 0.25,
+  },
+
   /** GDD 5.1 */
   scoring: {
-    analysisPointsPerCard: 5,
     lossFactor: 0.5,
     setupMulti: {
       feeling: 1,
@@ -117,8 +140,8 @@ export const CONFIG = {
 
   /** GDD 6 : prix, rareté et paramètres des 15 Outils */
   tools: {
-    stopLoss: { price: 4, rarity: 'common', stopPct: 0.05, primesPerStop: 1 },
-    takeProfit: { price: 4, rarity: 'common', takePct: 0.04, multiBonus: 1 },
+    stopLoss: { price: 4, rarity: 'common', lossFactor: 0.25, primesPerStop: 1 },
+    takeProfit: { price: 4, rarity: 'common', takeUnits: 2 },
     lowCostBroker: { price: 3, rarity: 'common', feePerSide: 0.0004 },
     marketMaker: { price: 3, rarity: 'common', spread: 0.0008 },
     candleReader: { price: 4, rarity: 'common', multiPerCard: 1 },
@@ -136,7 +159,7 @@ export const CONFIG = {
 
   /** GDD 6.1 */
   consumables: {
-    analystReport: { price: 3 },
+    analystReport: { price: 3, chanceBonus: 10 },
     training: { price: 3, multiBonus: 0.5 },
     signalPack: { price: 4, choices: 3 },
     hedge: { price: 3, pnlFactor: 0.5 },

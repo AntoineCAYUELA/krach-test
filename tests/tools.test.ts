@@ -2,9 +2,9 @@
 import { describe, expect, it } from 'vitest';
 import { CONFIG } from '../src/config.ts';
 import { cardContext } from '../src/engine/cards.ts';
+import { riskUnit } from '../src/engine/forecast.ts';
 import { classifySetup, computeMulti, type MultiInput } from '../src/engine/scoring.ts';
-import { allowedDurations, allowedLeverages, currentCosts, minDuration, openPosition, previewPosition, upcomingNews } from '../src/engine/run.ts';
-import { previewTrade } from '../src/engine/trade.ts';
+import { allowedDurations, currentCosts, minDuration, openPosition, previewPosition, sizeOrder, upcomingNews, type RunState } from '../src/engine/run.ts';
 import type { Candle, CardId, ToolId } from '../src/engine/types.ts';
 import { candle } from './helpers.ts';
 import { flatHistory, order, scriptedRun, startedRun, steadyFuture } from './runHelpers.ts';
@@ -16,7 +16,6 @@ function multi(tools: ToolId[], cards: CardId[], overrides: Partial<MultiInput> 
     tools,
     trendSlope: 0,
     duration: 3,
-    exitByToolTakeProfit: false,
     twoPercentOk: false,
     journalBonus: 0,
     formationBonus: 0,
@@ -24,33 +23,50 @@ function multi(tools: ToolId[], cards: CardId[], overrides: Partial<MultiInput> 
   }).total;
 }
 
+/** 3 bougies dont la première descend sous le stop-loss (97,097) sans gap. */
+const stopFuture = (): Candle[] => [candle(100, 100.2, 96, 96.5), candle(96.5, 97, 96, 96.6), candle(96.6, 97, 96, 96.8)];
+
+/** Espérance de gain avant frais et spread : chance × gain brut + (1 − chance) × perte brute. */
+function grossExpectancy(run: RunState): number {
+  const view = previewPosition(run, order());
+  const { entryPrice, notional, stopPrice, takePrice } = view.preview;
+  const c = view.chance.value;
+  return c * notional * (takePrice! / entryPrice - 1) + (1 - c) * notional * (stopPrice! / entryPrice - 1);
+}
+
 describe('les 15 Outils', () => {
-  it('1. Stop-loss discipliné : stop automatique à −5 %, +1 P quand il se déclenche', () => {
-    const future: Candle[] = [candle(100, 100.2, 94, 94.5), candle(94.5, 95, 94, 94.6), candle(94.6, 95, 94, 94.8)];
-    const run = scriptedRun(flatHistory(), future, ['stopLoss']);
+  it('1. Stop-loss discipliné : perte au stop × 0,25 au lieu de × 0,5, et +1 P', () => {
+    const run = scriptedRun(flatHistory(), stopFuture(), ['stopLoss']);
     const primes = run.primes;
     const record = openPosition(run, order());
-    expect(record.trade.stopPrice).toBeCloseTo(100.1 * 0.95, 10);
     expect(record.trade.exitReason).toBe('stopLoss');
+    expect(record.score.performance).toBeCloseTo(record.score.result * 0.25, 10);
     expect(record.primesBonus).toBe(1);
     expect(run.primes).toBe(primes + 1);
+
+    const without = openPosition(scriptedRun(flatHistory(), stopFuture()), order());
+    expect(without.score.performance).toBeCloseTo(without.score.result * 0.5, 10);
+    expect(without.primesBonus).toBe(0);
   });
 
-  it('1. Stop-loss discipliné : un stop joueur plus proche est prioritaire, sans bonus', () => {
-    const future: Candle[] = [candle(100, 100.2, 97, 97.5), ...steadyFuture(0, 2, 97.5)];
-    const run = scriptedRun(flatHistory(), future, ['stopLoss']);
-    const record = openPosition(run, order({ stopLossPct: 0.02 }));
-    expect(record.trade.stopPrice).toBeCloseTo(100.1 * 0.98, 10);
-    expect(record.trade.exitReason).toBe('stopLoss');
+  it('1. Stop-loss discipliné : une perte sans stop touché garde le facteur 0,5, sans bonus', () => {
+    const run = scriptedRun(flatHistory(), steadyFuture(-0.005), ['stopLoss']);
+    const record = openPosition(run, order());
+    expect(record.trade.exitReason).toBe('time');
+    expect(record.score.result).toBeLessThan(0);
+    expect(record.score.performance).toBeCloseTo(record.score.result * 0.5, 10);
     expect(record.primesBonus).toBe(0);
   });
 
-  it('2. Take-profit méthodique : take-profit à +4 % et +1 Multi quand il se déclenche', () => {
-    const run = scriptedRun(flatHistory(), steadyFuture(0.02), ['takeProfit']);
+  it('2. Take-profit méthodique : take-profit à 2 u, chance de base 33 % et aucun bonus de Multi', () => {
+    expect(previewPosition(scriptedRun(flatHistory(), steadyFuture(0.025)), order()).preview.takePrice).toBeCloseTo(100.1 * 1.045, 10);
+    const run = scriptedRun(flatHistory(), steadyFuture(0.025), ['takeProfit']);
+    const view = previewPosition(run, order());
+    expect(view.preview.takePrice).toBeCloseTo(100.1 * 1.06, 10);
+    expect(view.chance.base).toBeCloseTo(1 / 3, 12);
     const record = openPosition(run, order());
-    expect(record.trade.takePrice).toBeCloseTo(100.1 * 1.04, 10);
     expect(record.trade.exitReason).toBe('takeProfit');
-    expect(record.multi.total).toBe(1 + 1);
+    expect(record.multi.total).toBe(1);
   });
 
   it('3. Courtier low-cost : frais 0,10 % → 0,04 % par côté', () => {
@@ -89,11 +105,12 @@ describe('les 15 Outils', () => {
     expect(multi(['chartist'], ['supportBounce', 'bullishBreakout'])).toBe(2 + 3);
   });
 
-  it('9. Effet de levier : levier maximal ×2 → ×5', () => {
-    expect(Math.max(...allowedLeverages(startedRun()))).toBe(2);
-    expect(Math.max(...allowedLeverages(startedRun(1, ['leverage'])))).toBe(5);
-    expect(previewPosition(startedRun(), order({ leverage: 5 })).error).toBe('Levier non autorisé');
-    expect(previewPosition(startedRun(1, ['leverage']), order({ leverage: 5 })).error).toBeNull();
+  it('9. Effet de levier : taille Agressif ×2 → ×5, les autres tailles inchangées', () => {
+    expect(sizeOrder(startedRun(), 'aggressive').leverage).toBe(2);
+    const run = startedRun(1, ['leverage']);
+    expect(sizeOrder(run, 'aggressive')).toEqual({ stake: 1000, leverage: 5 });
+    expect(sizeOrder(run, 'normal').leverage).toBe(2);
+    expect(sizeOrder(run, 'prudent').leverage).toBe(1);
   });
 
   it('10. Vendeur à découvert : +1 Multi sur les shorts uniquement', () => {
@@ -107,23 +124,24 @@ describe('les 15 Outils', () => {
     expect(multi(['trendFollower'], [], { trendSlope: -0.5, direction: 'short' })).toBe(1.5);
   });
 
-  it('12. Scalpeur : positions d’1 bougie et +1 Multi sur elles', () => {
+  it('12. Scalpeur : positions d’1 bougie, u × √(1/3) et +1 Multi sur elles', () => {
     expect(allowedDurations(startedRun())).toEqual([3]);
     const run = scriptedRun(flatHistory(), steadyFuture(0.01, 3), ['scalper']);
     expect(allowedDurations(run)).toContain(1);
     expect(minDuration(run)).toBe(1);
     const record = openPosition(run, order({ duration: 1 }));
     expect(record.trade.candles).toHaveLength(1);
+    expect(record.trade.order.stopLossPct).toBeCloseTo(0.03 / Math.sqrt(3), 12);
     expect(run.seance!.candlesLeft).toBe(CONFIG.seance.candles - 1);
     expect(record.multi.total).toBe(1 + 1);
   });
 
   it('13. Règle des 2 % : ×2 si notionnel × distance du stop ≤ 2 % du capital', () => {
-    const run = startedRun(1, ['twoPercentRule']);
-    expect(previewPosition(run, order({ stake: 400, stopLossPct: 0.05 })).twoPercentOk).toBe(true);
-    expect(previewPosition(run, order({ stake: 400, stopLossPct: 0.05 })).multi.total).toBe(2);
-    expect(previewPosition(run, order({ stake: 401, stopLossPct: 0.05 })).twoPercentOk).toBe(false);
-    expect(previewPosition(run, order({ stake: 100, stopLossPct: null })).twoPercentOk).toBe(false);
+    const run = scriptedRun(flatHistory(), steadyFuture(0.01), ['twoPercentRule']);
+    expect(previewPosition(run, order({ size: 'prudent' })).twoPercentOk).toBe(true); // 500 × 3 % = 15 $
+    expect(previewPosition(run, order({ size: 'prudent' })).multi.total).toBe(2);
+    expect(previewPosition(run, order({ size: 'normal' })).twoPercentOk).toBe(false); // 1 000 × 3 % = 30 $
+    expect(previewPosition(run, order({ size: 'aggressive' })).twoPercentOk).toBe(false);
   });
 
   it('14. Carnet de trading : +0,5 Multi par trade gagnant à 2 cartes valides, plafond +4', () => {
@@ -146,22 +164,38 @@ describe('les 15 Outils', () => {
 });
 
 describe('synergies chiffrées (GDD 6)', () => {
-  it('1. Stop-loss discipliné + Règle des 2 % : notionnel ≤ 400 $ pour 1 000 $ de capital', () => {
-    const run = startedRun(1, ['stopLoss', 'twoPercentRule']);
-    expect(previewPosition(run, order({ stake: 200, leverage: 2 })).twoPercentOk).toBe(true);
-    expect(previewPosition(run, order({ stake: 250, leverage: 2 })).twoPercentOk).toBe(false);
+  it('1. Règle des 2 % + taille Prudent : même Performance qu’un trade Normal, pour la moitié du risque', () => {
+    const run = scriptedRun(flatHistory(), steadyFuture(0.01), ['twoPercentRule']);
+    const prudent = previewPosition(run, order({ size: 'prudent' }));
+    const normal = previewPosition(run, order({ size: 'normal' }));
+    expect(prudent.riskPct).toBeCloseTo(normal.riskPct / 2, 3);
+    expect(prudent.riskPct).toBeLessThan(0.02);
+    expect(prudent.gainAtTake * prudent.multi.total).toBeCloseTo(normal.gainAtTake * normal.multi.total, 1);
   });
 
-  it('2. Effet de levier + Stop-loss discipliné : perte ≈ 25 % de la mise au lieu de 100 %', () => {
-    const costs = { spread: 0.002, feePerSide: 0.001 };
-    const withStop = previewTrade(100, { direction: 'long', stake: 200, leverage: 5, stopLossPct: 0.05, takeProfitPct: null, duration: 3 }, costs);
-    expect(withStop.lossAtStop! / 200).toBeGreaterThan(-0.27);
-    expect(withStop.lossAtStop! / 200).toBeLessThan(-0.25);
-    const noStop = previewTrade(100, { direction: 'long', stake: 200, leverage: 5, stopLossPct: null, takeProfitPct: null, duration: 3 }, costs);
-    expect(noStop.liquidationPrice / noStop.entryPrice).toBeCloseTo(0.84, 10);
+  it('2. Effet de levier + Stop-loss discipliné : un stop à ×5 coûte environ 15 % du capital, pénalité divisée par 2', () => {
+    const run = scriptedRun(flatHistory(), stopFuture(), ['leverage', 'stopLoss']);
+    const view = previewPosition(run, order({ size: 'aggressive' }));
+    expect(view.preview.notional).toBe(5000);
+    expect(view.riskPct).toBeGreaterThan(0.15);
+    expect(view.riskPct).toBeLessThan(0.17);
+    const record = openPosition(run, order({ size: 'aggressive' }));
+    expect(record.trade.exitReason).toBe('stopLoss');
+    expect(record.score.performance).toBeCloseTo(record.score.result * 0.25, 10);
   });
 
-  it('3. Scalpeur + Courtier + Teneur : coût aller-retour 0,40 % → 0,16 %', () => {
+  it('3. Take-profit méthodique + bonnes cartes : espérance avant frais = (1 + ratio) × avantage × u × N', () => {
+    const plain = scriptedRun(flatHistory(), steadyFuture(0.01));
+    const tool = scriptedRun(flatHistory(), steadyFuture(0.01), ['takeProfit']);
+    plain.seance!.analystBoost = true; // avantage de 10 points de chance
+    tool.seance!.analystBoost = true;
+    expect(grossExpectancy(plain)).toBeCloseTo((1 + 1.5) * 0.1 * 0.03 * 1000, 8);
+    expect(grossExpectancy(tool)).toBeCloseTo((1 + 2) * 0.1 * 0.03 * 1000, 8);
+    expect(grossExpectancy(tool) / grossExpectancy(plain)).toBeCloseTo(1.2, 8);
+  });
+
+  it('4. Scalpeur + Courtier + Teneur : u ≈ 1,7 % sur NXC, coût aller-retour 0,40 % → 0,16 %', () => {
+    expect(riskUnit(0.015, 1)).toBeCloseTo(0.0173, 4);
     const roundTrip = (tools: ToolId[]) => {
       const c = currentCosts(startedRun(1, tools));
       return c.spread + 2 * c.feePerSide;
@@ -170,11 +204,11 @@ describe('synergies chiffrées (GDD 6)', () => {
     expect(roundTrip(['scalper', 'lowCostBroker', 'marketMaker'])).toBeCloseTo(0.0016, 12);
   });
 
-  it('4. Chartiste + Lecteur de chandeliers + Analyste quant : ×10', () => {
+  it('5. Chartiste + Lecteur de chandeliers + Analyste quant : ×10', () => {
     expect(multi(['chartist', 'candleReader', 'quantAnalyst'], ['supportBounce', 'hammer'])).toBe(10);
   });
 
-  it('5. Vendeur à découvert + Suiveur de tendance : short isolé en baisse ×3,75', () => {
+  it('6. Vendeur à découvert + Suiveur de tendance : short isolé en baisse ×3,75', () => {
     expect(multi(['shortSeller', 'trendFollower'], ['rsiOverbought'], { direction: 'short', trendSlope: -1 })).toBe(3.75);
   });
 });

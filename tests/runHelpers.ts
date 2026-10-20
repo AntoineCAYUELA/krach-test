@@ -20,7 +20,8 @@ export function scriptedRun(history: Candle[], future: Candle[], tools: ToolId[]
   return run;
 }
 
-/** Historique plat à 100 (40 bougies) et 3 bougies futures qui montent ou baissent régulièrement. */
+/** Historique plat à 100 (40 bougies) et 3 bougies futures qui montent ou baissent régulièrement.
+ * Marché scripté : σ = 1,5 %, donc u = 3 % ; stop-loss à 100,1 × 0,97 et take-profit à 100,1 × 1,045 en long. */
 export function flatHistory(): Candle[] {
   return fromCloses(Array<number>(40).fill(100));
 }
@@ -37,5 +38,5 @@ export function steadyFuture(stepPct: number, count = 3, start = 100): Candle[] 
 }
 
 export function order(overrides: Partial<PositionInput> = {}): PositionInput {
-  return { direction: 'long', stake: 500, leverage: 1, stopLossPct: null, takeProfitPct: null, duration: 3, cardIndices: [], ...overrides };
+  return { direction: 'long', size: 'normal', duration: 3, cardIndices: [], ...overrides };
 }

@@ -28,6 +28,16 @@ export interface Candle {
 
 export type CardFamily = 'candlestick' | 'indicator' | 'level' | 'volume';
 
+/** Rôle d'une carte (GDD 2.7) : retournement du prix, ou continuation du mouvement. */
+export type CardRole = 'reversal' | 'continuation';
+
+/** Contexte de marché affiché (GDD 2.7), calculé sur le graphique visible. */
+export type MarketContext = 'up' | 'down' | 'flat';
+
+/** Les 3 tailles de position du ticket (GDD 2.3). */
+export const SIZE_IDS = ['prudent', 'normal', 'aggressive'] as const;
+export type SizeId = (typeof SIZE_IDS)[number];
+
 export type CardId =
   | 'hammer'
   | 'shootingStar'

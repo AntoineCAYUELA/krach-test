@@ -65,8 +65,9 @@ export function shuffle<T>(rng: RngState, items: T[]): T[] {
 
 /**
  * Graine dérivée (hachage FNV-1a) : chaque flux de hasard (marché de la séance 3, boutique 2…)
- * a sa propre graine. Ainsi, la même graine de run donne les mêmes marchés quels que soient
- * les choix du joueur.
+ * a sa propre graine. Ainsi, chaque séance d'une même graine de run démarre sur le même marché,
+ * quels que soient les choix du joueur ; seules les bougies jouées pendant une position dépendent
+ * de l'issue tirée (GDD 2.7).
  */
 export function deriveSeed(seed: number, ...parts: (string | number)[]): number {
   const text = [seed, ...parts].join(':');

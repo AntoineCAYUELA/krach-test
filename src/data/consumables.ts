@@ -19,7 +19,7 @@ const K = CONFIG.consumables;
 export const CONSUMABLES: Record<ConsumableId, ConsumableDef> = {
   analystReport: {
     id: 'analystReport', name: 'Rapport d’analyste', price: K.analystReport.price, usableInShop: false,
-    effect: 'Révèle le régime de marché actuel (bull, bear ou range).',
+    effect: `+${K.analystReport.chanceBonus} % de chance sur le prochain trade.`,
     concept: 'Un rapport de recherche aide à situer le contexte, sans garantir l’avenir.',
   },
   training: {
@@ -44,7 +44,7 @@ export const CONSUMABLES: Record<ConsumableId, ConsumableDef> = {
   },
   crystalBall: {
     id: 'crystalBall', name: 'Boule de cristal', price: K.crystalBall.price, usableInShop: false,
-    effect: 'Affiche la couleur (verte ou rouge) de la prochaine bougie.',
+    effect: 'Montre l’issue du prochain trade avant de le confirmer : take-profit ou stop-loss (hors news).',
     concept: 'Aucun : pouvoir surnaturel. Connaître l’avenir est impossible ; utiliser une information non publique est un délit d’initié.',
   },
 };

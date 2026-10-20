@@ -61,7 +61,7 @@ function simulate(seed: number, build: Build, policy: Policy): Outcome {
     const seance = run.seance!;
     stress.push(seance.stress?.start ?? 0);
     states.push(seance.stress?.state ?? 'calm');
-    playSeance(run, build.leverage[step] ?? 2);
+    playSeance(run);
     const won = run.phase === 'summary';
     results.push(won);
     if (!won) break;

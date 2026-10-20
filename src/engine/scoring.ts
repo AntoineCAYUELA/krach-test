@@ -55,9 +55,7 @@ export interface MultiInput {
   trendSlope: number | null;
   /** Durée de la position en bougies (1 = scalping). */
   duration: number;
-  /** La position a été fermée par le take-profit de l'Outil Take-profit méthodique. */
-  exitByToolTakeProfit: boolean;
-  /** Condition de la Règle des 2 % remplie (stop présent et risque ≤ 2 % du capital). */
+  /** Condition de la Règle des 2 % remplie (risque ≤ 2 % du capital). */
   twoPercentOk: boolean;
   /** Bonus permanent du Carnet de trading. */
   journalBonus: number;
@@ -81,7 +79,6 @@ export function computeMulti(input: MultiInput): MultiBreakdown {
   if (has('chartist') && countFamily('level') > 0) terms.push({ label: 'Chartiste', kind: 'add', value: T.chartist.multiPerCard * countFamily('level') });
   if (has('shortSeller') && input.direction === 'short') terms.push({ label: 'Vendeur à découvert', kind: 'add', value: T.shortSeller.multiBonus });
   if (has('scalper') && input.duration === CONFIG.seance.scalpDuration) terms.push({ label: 'Scalpeur', kind: 'add', value: T.scalper.multiBonus });
-  if (has('takeProfit') && input.exitByToolTakeProfit) terms.push({ label: 'Take-profit méthodique', kind: 'add', value: T.takeProfit.multiBonus });
 
   const slope = input.trendSlope ?? 0;
   const withTrend = (slope > 0 && input.direction === 'long') || (slope < 0 && input.direction === 'short');
@@ -98,18 +95,17 @@ export function computeMulti(input: MultiInput): MultiBreakdown {
 }
 
 export interface TradeScore {
-  analysisPoints: number;
-  /** Résultat = Points d'analyse + P&L net. */
+  /** Résultat = P&L net. */
   result: number;
   /** Performance du trade : Résultat × Multi si ≥ 0, Résultat × 0,5 sinon (pénalité sans Multi). */
   performance: number;
 }
 
-export function scoreTrade(pnlNet: number, validCardCount: number, multiTotal: number): TradeScore {
-  const analysisPoints = CONFIG.scoring.analysisPointsPerCard * validCardCount;
-  const result = analysisPoints + pnlNet;
-  const performance = result >= 0 ? result * multiTotal : result * CONFIG.scoring.lossFactor;
-  return { analysisPoints, result, performance };
+/** `lossFactor` : pénalité d'une perte (0,5 ; 0,25 au stop-loss avec Stop-loss discipliné). */
+export function scoreTrade(pnlNet: number, multiTotal: number, lossFactor: number = CONFIG.scoring.lossFactor): TradeScore {
+  const result = pnlNet;
+  const performance = result >= 0 ? result * multiTotal : result * lossFactor;
+  return { result, performance };
 }
 
 /** La Performance de séance ne descend jamais sous 0. */

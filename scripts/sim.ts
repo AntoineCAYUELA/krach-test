@@ -5,9 +5,9 @@ import { BUILDS, passRates, simulateRun } from '../src/sim/bot.ts';
 
 /** Tableau 7.3 du GDD (en %), null = case non comparable (échantillon trop petit). */
 const GDD_TABLE: Record<string, (number | null)[]> = {
-  'Aucun Outil': [87, 77, 73, 72, 43, 18, 12, null],
-  'Communs seulement': [87, 78, 77, 71, 48, 29, 21, null],
-  Synergies: [87, 78, 75, 72, 70, 62, 61, 65],
+  'Aucun Outil': [88, 84, 76, 66, 49, 28, 18, null],
+  'Communs seulement': [88, 85, 79, 72, 60, 44, 30, 34],
+  Synergies: [88, 85, 79, 72, 81, 80, 74, 74],
 };
 
 /** Cases vérifiées par le prompt : « Aucun Outil » S1 à S6, « Synergies » S1 à S8. */

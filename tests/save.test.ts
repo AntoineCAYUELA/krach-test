@@ -13,7 +13,7 @@ function roundTrip(run: RunState): RunState {
 function play(run: RunState): void {
   discardCards(run, [0, 2]);
   passCandle(run);
-  openPosition(run, order({ stake: 300, cardIndices: [1] }));
+  openPosition(run, order({ size: 'prudent', cardIndices: [1] }));
   run.seance!.quota = 0;
   passCandle(run);
   finishSummary(run);
