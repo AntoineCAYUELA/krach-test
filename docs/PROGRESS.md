@@ -6,7 +6,7 @@ Jalons du prompt docs/prompt-claude-code.md.
 |---|---|
 | 1. Projet Vite + TS strict + Vitest + config + rng | Fait |
 | 2. Marché et indicateurs | Fait |
-| 3. Cartes, trade et score | À faire |
+| 3. Cartes, trade et score | Fait (exemple GDD 5.3 rejoué à 1e-6 près) |
 | 4. Séance, run, Outils, consommables, boutique, simulation | À faire |
 | 5. Écran de trading jouable | À faire |
 | 6. Autres écrans, glossaire, infobulles | À faire |

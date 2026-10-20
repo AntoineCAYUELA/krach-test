@@ -15,3 +15,5 @@ Points que le GDD ne précise pas, et le choix fait dans le code. Une ligne par 
 ## Ajoutés pendant le développement
 - Installation npm : `.npmrc` active `legacy-peer-deps`, car npm 10.9 plante (« edgesOut ») en résolvant les dépendances optionnelles de Vitest 4.
 - Flux de hasard séparés (marché, pioche, boutique) dérivés de la graine de run : la même graine donne les mêmes marchés quels que soient les choix du joueur.
+- Perte plafonnée à la mise : si un stop sauté par un gap (ou tout autre sortie) ferait perdre plus que la mise, la position est traitée comme liquidée (perte = mise). Sinon le capital pourrait devenir négatif.
+- Aperçu du ticket : si le stop-loss est placé au-delà du prix de liquidation, la « perte maximale » affichée est la mise entière.
