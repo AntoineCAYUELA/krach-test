@@ -17,3 +17,10 @@ Points que le GDD ne précise pas, et le choix fait dans le code. Une ligne par 
 - Flux de hasard séparés (marché, pioche, boutique) dérivés de la graine de run : la même graine donne les mêmes marchés quels que soient les choix du joueur.
 - Perte plafonnée à la mise : si un stop sauté par un gap (ou tout autre sortie) ferait perdre plus que la mise, la position est traitée comme liquidée (perte = mise). Sinon le capital pourrait devenir négatif.
 - Aperçu du ticket : si le stop-loss est placé au-delà du prix de liquidation, la « perte maximale » affichée est la mise entière.
+- Fin de séance avec le Scalpeur : la séance s'arrête quand il reste moins de bougies que la position la plus courte possible (1 avec le Scalpeur, 3 sinon), au lieu de « moins de 3 » dans tous les cas.
+- Carnet de trading : le bonus accumulé est perdu si l'Outil est revendu (il ne s'applique que tant que l'Outil est possédé).
+- Formation et Pack de signaux sont aussi utilisables en boutique ; les autres consommables seulement pendant une séance. Une seule Couverture peut être active à la fois.
+- Pack de signaux : la carte ajoutée entre dans le deck de la run et dans la pioche de la séance en cours ; une carte retirée sort du deck et, si possible, de la pioche ou de la défausse (pas de la main).
+- Choix du stop et du take-profit : à distance égale, c'est l'Outil qui s'applique (et donne son bonus).
+- Robot de simulation : comme dans g.py, il « gaspille » une défausse quand il n'a rien à jeter. Différence restante avec g.py : une position fermée tôt laisse quand même passer ses 3 bougies (règle du GDD), alors que g.py arrêtait le marché.
+- Formatage des nombres : un seul Intl.NumberFormat par nombre de décimales (toLocaleString rendait la simulation 13 fois plus lente).

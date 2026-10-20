@@ -57,6 +57,7 @@ export function startingDeck(): CardId[] {
 /** Tout ce dont une carte a besoin pour être évaluée. */
 export interface CardContext {
   candles: readonly Candle[];
+  closes: readonly number[];
   snap: IndicatorSnapshot;
   rsiOversold: number;
   rsiOverbought: number;
@@ -66,6 +67,7 @@ export function cardContext(candles: readonly Candle[], tools: readonly ToolId[]
   const oscillator = tools.includes('rsiOscillator');
   return {
     candles,
+    closes: candles.map((c) => c.c),
     snap: snapshot(candles),
     rsiOversold: oscillator ? CONFIG.tools.rsiOscillator.oversold : C.rsiOversold,
     rsiOverbought: oscillator ? CONFIG.tools.rsiOscillator.overbought : C.rsiOverbought,
@@ -140,7 +142,7 @@ export function checkCard(id: CardId, direction: Direction, ctx: CardContext): C
     }
     case 'goldenCross':
     case 'deathCross': {
-      const closes = candles.map((c) => c.c);
+      const closes = ctx.closes;
       const { smaShort, smaLong, crossLookback } = CONFIG.indicators;
       const diff = (i: number) => (sma(closes, smaShort, i) ?? NaN) - (sma(closes, smaLong, i) ?? NaN);
       const now = diff(t);

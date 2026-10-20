@@ -1,8 +1,16 @@
 // Formatage des nombres à la française (virgule décimale, espace pour les milliers).
 // Utilisé par le moteur (raisons des cartes) et par l'interface.
 
+// Les formateurs Intl sont coûteux à créer : un seul par nombre de décimales.
+const formatters = new Map<number, Intl.NumberFormat>();
+
 export function fmt(value: number, decimals = 2): string {
-  return value.toLocaleString('fr-FR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+  let formatter = formatters.get(decimals);
+  if (!formatter) {
+    formatter = new Intl.NumberFormat('fr-FR', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+    formatters.set(decimals, formatter);
+  }
+  return formatter.format(value);
 }
 
 export function money(value: number): string {
