@@ -1,0 +1,22 @@
+{
+  "name": "krach-test",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Roguelike deckbuilder façon Balatro sur le thème du trading (prototype MVP).",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "sim": "node scripts/sim.ts",
+    "e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3",
+    "vite": "7.3.7",
+    "vitest": "4.1.12"
+  }
+}
