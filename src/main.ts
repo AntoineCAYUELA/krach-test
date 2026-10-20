@@ -1,3 +1,6 @@
-// Point d'entrée de l'application (temporaire jusqu'au jalon 5).
-const app = document.querySelector<HTMLDivElement>('#app');
-if (app) app.textContent = 'Krach Test : prototype en construction.';
+// Point d'entrée : monte l'application dans la page.
+import './style.css';
+import { App } from './ui/app.ts';
+
+const root = document.querySelector<HTMLDivElement>('#app');
+if (root) new App(root).start();
