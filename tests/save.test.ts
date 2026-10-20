@@ -1,7 +1,7 @@
 // Sauvegarde et reprise (jalon 7) : l'état d'une run est un objet JSON simple.
 // Une run sauvegardée puis rechargée doit continuer exactement comme l'originale.
 import { describe, expect, it } from 'vitest';
-import { discardCards, finishSummary, leaveShop, openPosition, passCandle, type RunState } from '../src/engine/run.ts';
+import { discardCards, finishSummary, leaveEntracte, leaveShop, openPosition, passCandle, type RunState } from '../src/engine/run.ts';
 import { rerollShop } from '../src/engine/shop.ts';
 import { order, startedRun } from './runHelpers.ts';
 
@@ -17,6 +17,7 @@ function play(run: RunState): void {
   run.seance!.quota = 0;
   passCandle(run);
   finishSummary(run);
+  leaveEntracte(run);
   run.primes = 50;
   rerollShop(run);
   leaveShop(run);
@@ -37,6 +38,7 @@ describe('sauvegarde', () => {
     original.seance!.quota = 0;
     passCandle(original);
     finishSummary(original);
+    leaveEntracte(original);
     original.primes = 50;
     const restored = roundTrip(original);
     rerollShop(original);

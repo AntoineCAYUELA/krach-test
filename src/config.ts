@@ -163,6 +163,44 @@ export const CONFIG = {
     crash: { forcedRegime: 'bear', sigmaMultiplier: 1.5 },
   },
 
+  /** GDD 13 : vie du trader (stress, épargne, poste, logement, activités) */
+  life: {
+    stressStart: 15,
+    stressMax: 100,
+    /** Trade perdant : forfait + points par % du capital perdu. */
+    lossFlat: 3,
+    lossPerCapitalPct: 1.5,
+    liquidation: 25,
+    win: -2,
+    /** Levier : points par cran au-delà de ×2, par trade, gagnant ou perdant. */
+    freeLeverage: 2,
+    leveragePerStep: 3,
+    seanceFatigue: 10,
+    eventSeance: 10,
+    nervous: { threshold: 50, multi: 0.8 },
+    tilt: { threshold: 80, multi: 0.6 },
+    savingsStart: 60,
+    salary: 60,
+    /** Facteur appliqué au stress pris pendant une séance. */
+    setups: {
+      laptop: { price: 0, factor: 1 },
+      tower: { price: 100, factor: 0.8 },
+      dualScreen: { price: 200, factor: 0.6 },
+    },
+    /** Récupération à chaque nuit d'entracte. */
+    homes: {
+      studio: { price: 0, recovery: 10 },
+      t2: { price: 120, recovery: 20 },
+      loft: { price: 250, recovery: 30 },
+    },
+    activities: {
+      evening: { price: 20, relief: 15 },
+      spa: { price: 50, relief: 30 },
+      weekend: { price: 90, relief: 50 },
+      trip: { price: 150, relief: 100 },
+    },
+  },
+
   /** GDD 2.3 étape 6 */
   animation: {
     candleMs: 600,

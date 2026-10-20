@@ -10,9 +10,23 @@ import { addPerformance, classifySetup, computeMulti, scoreTrade, type MultiBrea
 import { previewTrade, resolveTrade, type TradeCosts, type TradePreview, type TradeResult } from './trade.ts';
 import type { CardId, ConsumableId, Direction, EventId, Regime, SetupType, ToolId } from './types.ts';
 import { GameError } from './errors.ts';
+import {
+  addStress,
+  createLife,
+  fatigueDelta,
+  nextUpgrade,
+  stressState,
+  tradeStressDelta,
+  type EntracteState,
+  type LifeState,
+  type SeanceStress,
+  type TradeStress,
+  type Upgrade,
+} from './life.ts';
 import { createShop } from './shop.ts';
+import type { ActivityId, HomeId, SetupId } from './types.ts';
 
-export type RunPhase = 'briefing' | 'seance' | 'summary' | 'shop' | 'victory' | 'defeat';
+export type RunPhase = 'briefing' | 'seance' | 'summary' | 'entracte' | 'shop' | 'victory' | 'defeat';
 export type DefeatCause = 'quota' | 'liquidation';
 
 export { GameError };
@@ -44,6 +58,8 @@ export interface TradeRecord {
   capitalBefore: number;
   capitalAfter: number;
   performanceAfter: number;
+  /** Stress pris par ce trade (GDD 13.2), null si la vie du trader est désactivée. */
+  stress: TradeStress | null;
 }
 
 export interface SeanceRewards {
@@ -76,6 +92,8 @@ export interface SeanceState {
   capitalAtStart: number;
   status: 'playing' | 'won' | 'lost' | 'liquidated';
   rewards: SeanceRewards | null;
+  /** Stress de la séance (GDD 13.2), null si la vie du trader est désactivée. */
+  stress: SeanceStress | null;
 }
 
 export interface SeanceHistory {
@@ -95,7 +113,7 @@ export interface ShopState {
 }
 
 export interface RunState {
-  version: 1;
+  version: 2;
   seed: number;
   phase: RunPhase;
   defeatCause: DefeatCause | null;
@@ -116,11 +134,16 @@ export interface RunState {
   history: SeanceHistory[];
   bestTrade: { pnlNet: number; seance: number; direction: Direction } | null;
   tradeCount: number;
+  /** Vie du trader (GDD 13) ; null quand elle est désactivée (simulation de référence du GDD 7.3). */
+  life: LifeState | null;
+  entracte: EntracteState | null;
 }
 
 export interface RunOptions {
   /** Impose les événements des 8 séances (simulation, tests). */
   events?: (EventId | null)[];
+  /** false : sans stress ni entracte, comme dans le GDD 7.3. */
+  life?: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -128,7 +151,7 @@ export interface RunOptions {
 
 export function createRun(seed: number, options: RunOptions = {}): RunState {
   const run: RunState = {
-    version: 1,
+    version: 2,
     seed,
     phase: 'briefing',
     defeatCause: null,
@@ -147,6 +170,8 @@ export function createRun(seed: number, options: RunOptions = {}): RunState {
     history: [],
     bestTrade: null,
     tradeCount: 0,
+    life: options.life === false ? null : createLife(),
+    entracte: null,
   };
   run.seance = prepareSeance(run);
   return run;
@@ -204,15 +229,25 @@ function prepareSeance(run: RunState): SeanceState {
     capitalAtStart: run.capital,
     status: 'playing',
     rewards: null,
+    stress: seanceStress(run.life, event),
   };
   drawUpTo(seance);
   return seance;
+}
+
+/** Stress fixé au briefing : la séance à événement ajoute son stress avant que l'état soit fixé (GDD 13.2). */
+function seanceStress(life: LifeState | null, event: EventId | null): SeanceStress | null {
+  if (!life) return null;
+  const before = life.stress;
+  if (event) addStress(life, CONFIG.life.eventSeance);
+  return { start: life.stress, event: life.stress - before, state: stressState(life.stress), fatigue: null };
 }
 
 /** Briefing → séance. */
 export function beginSeance(run: RunState): void {
   if (run.phase !== 'briefing' || !run.seance) throw new GameError('Aucune séance à commencer');
   run.phase = 'seance';
+  if (run.life) run.life.tripReview = false;
 }
 
 // ---------------------------------------------------------------------------
@@ -372,6 +407,7 @@ export function previewPosition(run: RunState, input: PositionInput): PositionPr
     twoPercentOk,
     journalBonus: run.journalBonus,
     formationBonus: run.formations[setup.type] ?? 0,
+    ...(seance.stress ? { stressState: seance.stress.state } : {}),
   });
   return { preview, stop, take, setup, multi, twoPercentOk, error: positionError(run, input) };
 }
@@ -428,6 +464,7 @@ export function openPosition(run: RunState, input: PositionInput): TradeRecord {
     twoPercentOk: planned.twoPercentOk,
     journalBonus: run.journalBonus,
     formationBonus: run.formations[planned.setup.type] ?? 0,
+    ...(seance.stress ? { stressState: seance.stress.state } : {}),
   });
   const score = scoreTrade(pnlNet, planned.setup.validCards.length, multi.total);
 
@@ -442,6 +479,13 @@ export function openPosition(run: RunState, input: PositionInput): TradeRecord {
   const capitalBefore = run.capital;
   run.capital += pnlNet;
   seance.performance = addPerformance(seance.performance, score.performance);
+
+  let stress: TradeStress | null = null;
+  if (run.life) {
+    const delta = tradeStressDelta(run.life, { pnlNet, capitalBefore, leverage: input.leverage, liquidated: trade.exitReason === 'liquidation' });
+    addStress(run.life, delta);
+    stress = { delta, after: run.life.stress };
+  }
 
   const playedCards = removeFromHand(seance, input.cardIndices);
   seance.discardPile.push(...playedCards);
@@ -463,6 +507,7 @@ export function openPosition(run: RunState, input: PositionInput): TradeRecord {
     capitalBefore,
     capitalAfter: run.capital,
     performanceAfter: seance.performance,
+    stress,
   };
   seance.trades.push(record);
   run.tradeCount++;
@@ -481,6 +526,10 @@ function checkSeanceEnd(run: RunState): void {
     endRun(run, 'liquidation');
   } else if (seance.performance >= seance.quota) {
     seance.status = 'won';
+    if (run.life && seance.stress) {
+      seance.stress.fatigue = fatigueDelta(run.life);
+      addStress(run.life, seance.stress.fatigue);
+    }
     seance.rewards = computeRewards(run, seance);
     run.primes += seance.rewards.total;
     recordHistory(run, seance, true);
@@ -517,13 +566,21 @@ export function computeRewards(run: RunState, seance: SeanceState): SeanceReward
   return { base, unusedOrders, interest, total: base + unusedOrders + interest };
 }
 
-/** Bilan → boutique, ou victoire après la séance 8. */
+/** Bilan → entracte (ou boutique sans la vie du trader), ou victoire après la séance 8. */
 export function finishSummary(run: RunState): void {
   if (run.phase !== 'summary') throw new GameError('Pas de bilan en cours');
   if (run.seanceIndex >= CONFIG.run.seanceCount - 1) {
     run.phase = 'victory';
     return;
   }
+  if (run.life) {
+    openEntracte(run, run.life);
+    return;
+  }
+  openShop(run);
+}
+
+function openShop(run: RunState): void {
   run.phase = 'shop';
   run.shop = createShop(run);
 }
@@ -532,9 +589,63 @@ export function finishSummary(run: RunState): void {
 export function leaveShop(run: RunState): void {
   if (run.phase !== 'shop') throw new GameError('Pas de boutique ouverte');
   run.shop = null;
+  nextSeance(run);
+}
+
+function nextSeance(run: RunState): void {
   run.seanceIndex++;
   run.seance = prepareSeance(run);
   run.phase = 'briefing';
+}
+
+// ---------------------------------------------------------------------------
+// Entracte (GDD 13.3) : salaire, nuit au logement, activité, améliorations
+
+function openEntracte(run: RunState, life: LifeState): void {
+  const L = CONFIG.life;
+  const stressBefore = life.stress;
+  const recovery = L.homes[life.home].recovery;
+  addStress(life, -recovery);
+  life.savings += L.salary;
+  run.entracte = { salary: L.salary, stressBefore, recovery, activity: null };
+  run.phase = 'entracte';
+}
+
+function requireEntracte(run: RunState): { life: LifeState; entracte: EntracteState } {
+  if (run.phase !== 'entracte' || !run.life || !run.entracte) throw new GameError('Pas d’entracte en cours');
+  return { life: run.life, entracte: run.entracte };
+}
+
+/** Une activité au plus par entracte, payée sur l'épargne. */
+export function chooseActivity(run: RunState, id: ActivityId): void {
+  const { life, entracte } = requireEntracte(run);
+  if (entracte.activity) throw new GameError('Une seule activité par entracte');
+  const activity = CONFIG.life.activities[id];
+  if (life.savings < activity.price) throw new GameError('Épargne insuffisante');
+  life.savings -= activity.price;
+  addStress(life, -activity.relief);
+  entracte.activity = id;
+  if (id === 'trip') life.tripReview = true;
+}
+
+/** Achète le niveau suivant du poste ou du logement. */
+export function buyUpgrade(run: RunState, kind: Upgrade): SetupId | HomeId {
+  const { life } = requireEntracte(run);
+  const next = nextUpgrade(life, kind);
+  if (!next) throw new GameError('Déjà au dernier niveau');
+  if (life.savings < next.price) throw new GameError('Épargne insuffisante');
+  life.savings -= next.price;
+  if (kind === 'setup') life.setup = next.id as SetupId;
+  else life.home = next.id as HomeId;
+  return next.id;
+}
+
+/** Entracte → boutique ; après un Voyage, la boutique est sautée (GDD 13.3). */
+export function leaveEntracte(run: RunState): void {
+  const { entracte } = requireEntracte(run);
+  run.entracte = null;
+  if (entracte.activity === 'trip') nextSeance(run);
+  else openShop(run);
 }
 
 // ---------------------------------------------------------------------------

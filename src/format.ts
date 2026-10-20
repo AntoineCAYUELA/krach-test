@@ -25,3 +25,8 @@ export function signed(value: number, decimals = 2): string {
   const text = fmt(Math.abs(value), decimals);
   return value < 0 ? `−${text}` : `+${text}`;
 }
+
+/** Épargne personnelle (GDD 13), en euros entiers. */
+export function euros(value: number): string {
+  return `${fmt(value, 0)} €`;
+}

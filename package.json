@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "sim": "node scripts/sim.ts",
+    "sim:stress": "node scripts/sim-stress.ts",
     "e2e": "playwright test"
   },
   "devDependencies": {
