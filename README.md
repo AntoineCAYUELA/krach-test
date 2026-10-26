@@ -1,58 +1,48 @@
 # Krach Test
 
-Roguelike de cartes façon Balatro sur le thème du trading. On lit un graphique en chandeliers, on joue des cartes Signal (marteau, RSI, support, pic de volume…) et on ouvre des positions pour atteindre un quota de Performance à chaque séance. En chemin, le jeu apprend le vocabulaire et les mécanismes des marchés : long et short, levier, stop-loss, spread, liquidation.
+Roguelike de trading façon Balatro. Tu paies ton loyer en tradant depuis ta chambre : à chaque trade, le marché montre 12 bougies, tu choisis LONG ou SHORT, et les 5 bougies suivantes donnent le résultat. Les retournements ne tombent jamais du ciel : ils sont annoncés par des signes sur le graphique (mèche, volume, jauge acheteurs et vendeurs). Le jeu apprend à les lire.
 
 **Jouer dans le navigateur : https://antoinecayuela.github.io/krach-test/**
 
-![Écran de trading : graphique, main de cartes et ticket d'ordre](docs/screenshot-ticket.png)
+![Écran de trading : position LONG ouverte, zone de P&L et jauge acheteurs et vendeurs](docs/screenshot-trade.png)
 
-![Résolution d'un trade : take-profit touché et décomposition du score](docs/screenshot-score.png)
+> Les entreprises, les prix et les news sont inventés. Le trading réel fait perdre de l'argent à la majorité des particuliers. Ce jeu entraîne à lire un graphique, il ne donne aucun conseil d'investissement.
 
-> Les entreprises, les prix et les news sont fictifs. Le trading réel fait perdre de l'argent à la majorité des particuliers. Ce jeu est un entraînement au vocabulaire, pas un conseil d'investissement.
+## Le jeu en bref (base v3)
 
-## Le jeu en bref
-
-- Une run, c'est 8 séances. Une sur deux est une séance à événement (marché sans tendance, jour de résultats, frais doublés, volatilité écrasée), et la dernière est un krach.
-- Chaque séance donne 5 ordres, 3 défausses et 24 bougies pour atteindre le quota.
-- À chaque tour, on choisit long ou short. Chaque carte de la main indique alors ✔ ou ✘ avec la raison (« RSI = 41, il faut < 30 »). Ensuite, on joue 0 à 3 cartes et on règle la mise, le levier, le stop-loss et le take-profit.
-- Score : Résultat = 5 × cartes valides + P&L net. La Performance vaut Résultat × Multi si elle est positive, et Résultat × 0,5 si elle est négative. Une confluence de familles différentes vaut plus qu'un signal isolé.
-- Le capital est conservé d'une séance à l'autre. Sous 10 $, c'est le margin call.
-- Entre deux séances, la boutique vend des Outils (15, avec des synergies) et des consommables (6).
-- Vie du trader (GDD 13) : une jauge de stress monte avec les pertes, le levier et la fatigue. Nerveux dès 50 (Multi ×0,8), tilt dès 80 (Multi ×0,6). Le soir, l'entracte verse un salaire en € sur une épargne séparée du capital. Elle paie des activités (soirée, spa, week-end, voyage), un meilleur poste (portable, PC tour, double écran) et un meilleur logement (studio, T2, loft). Le voyage remet le stress à 0 mais saute la boutique, et le briefing suivant résume le marché manqué.
-- Vue à la première personne : sur un écran d'au moins 1 100 × 740 px, le jeu s'affiche dans l'écran du poste, posé sur un bureau, devant la fenêtre du logement. L'option Décor l'enlève.
-- Chaque terme de trading affiché à l'écran est souligné. À sa première apparition, sa définition s'ouvre. Le glossaire complet s'ouvre avec la touche G.
+- Une partie = un palier. Chaque mois (séance) a un loyer à payer : un gain minimum à faire en 10 trades.
+- P&L = capital × (sortie / entrée − 1), en positif pour un LONG qui monte ou un SHORT qui baisse. Chaque gain d'affilée monte la série : ×1, ×1,5, ×2… jusqu'à ×3. Une perte remet la série à 0.
+- Loyer payé avant la fin : encaisser donne un ticket par trade restant. Loyer raté : un ticket achète un trade bonus (1, puis 2, puis 3 tickets). Sans ticket, le propriétaire envoie un SMS et le palier recommence.
+- 5 paliers, une nouveauté par palier : tendances et retournements, range, faux signaux, news surprises, crypto.
+- Gros trade (série à ×2 ou trade décisif pour le loyer) : bougies ralenties, battements de cœur, écran qui tremble.
+- Après chaque trade, une explication dit ce qu'a fait le marché et la bonne lecture. Chaque terme de trading s'explique dans une bulle à sa première apparition ; le glossaire complet s'ouvre avec G.
+- Clavier : ↑ ou L pour LONG, ↓ ou S pour SHORT, Entrée pour le bouton principal.
 
 ## Stack et architecture
 
-- Vite + TypeScript strict, sans framework : DOM et CSS natifs. Le graphique est dessiné en Canvas 2D par le code du projet. Le projet n'a aucune dépendance d'exécution.
-- Tests : Vitest pour le moteur (119 tests), Playwright pour un test de fumée dans un vrai navigateur.
+- Vite + TypeScript strict, sans framework ni dépendance d'exécution. Graphique en Canvas 2D.
+- Tests : Vitest pour le moteur, Playwright pour un test de fumée dans un vrai navigateur.
 - Hébergement : GitHub Pages, publié par GitHub Actions.
 
 ```
 src/
-  config.ts        tous les nombres du game design (un seul endroit pour équilibrer)
-  engine/          logique pure, sans DOM, entièrement testable
+  engine/          logique pure, sans DOM, testable dans Node
     rng.ts         générateur pseudo-aléatoire à graine (mulberry32)
-    market.ts      bougies, régimes cachés (bull, bear, range), news et gaps
-    indicators.ts  MM5, MM20, RSI 14, support, résistance, volume moyen, pente
-    cards.ts       conditions de validité des 14 cartes Signal
-    trade.ts       résolution d'une position : stop-loss, liquidation, take-profit
-    scoring.ts     formule de score et multiplicateurs
-    run.ts         machine à états de la run et de la séance, Outils, consommables, entracte
-    shop.ts        boutique
-    life.ts        stress, épargne, poste et logement (GDD 13)
-    review.ts      revue de marché affichée au retour d'un voyage
-  data/            textes : Outils, consommables, événements, glossaire, activités
-  ui/              un module par écran, plus chart.ts (Canvas), tooltip.ts et scene.ts (décor)
-  sim/bot.ts       robot naïf pour l'équilibrage
-scripts/sim.ts     5 000 runs par construction d'Outils, comparées au GDD
-scripts/sim-stress.ts  effet du stress et des dépenses d'entracte (GDD 13.7)
-tests/             tests unitaires (dont l'exemple chiffré du GDD rejoué à 1e-6 près)
+    rules.ts       chiffres du GDD : capital, trades par séance, multi de série, trades bonus
+    tiers.ts       les 5 paliers : quotas et paramètres du marché
+    market.ts      bougies, régimes (hausse, baisse, range), signes, faux signes, news
+    run.ts         machine à états d'une partie
+    explain.ts     explication après chaque trade
+    progress.ts    paliers débloqués et records
+  data/            glossaire et news
+  ui/              écran de jeu, graphique, sons, sauvegarde
+  sim/bot.ts       joueur automatique pour l'équilibrage
+scripts/sim.ts     taux de victoire par palier et par taux d'erreur
+tests/             tests unitaires (dont l'exemple chiffré du GDD)
 e2e/               test de fumée Playwright
-docs/              game design document, décisions, avancement
 ```
 
-L'état complet d'une run est un objet JSON. Il se sauvegarde tel quel dans le localStorage, et la même graine redonne exactement les mêmes marchés.
+L'état d'une partie est un objet JSON sauvegardé avant chaque trade : la même graine redonne exactement le même marché.
 
 ## Lancer le projet
 
@@ -63,32 +53,27 @@ npm ci
 npm run dev      # jeu sur http://localhost:5173
 npm test         # tests unitaires
 npm run e2e      # test de fumée (Playwright, Chromium)
-npm run sim      # simulation d'équilibrage (environ 15 s)
-npm run sim:stress  # simulation de la vie du trader (GDD 13.7)
+npm run sim      # taux de victoire du joueur automatique
 npm run build    # vérification TypeScript et build de production dans dist/
 ```
 
 ## Équilibrage
 
-Les quotas ont été calibrés avec un simulateur (`tools/simulation-python/`), puis vérifiés par `npm run sim`, qui rejoue le même robot naïf en TypeScript. Taux de réussite de chaque séance (en %, sur les runs qui l'atteignent), avec entre parenthèses la valeur du tableau 7.3 du GDD :
+`npm run sim` joue 1 000 parties par case avec un joueur qui lit les signes correctement, sauf une part d'erreurs. Taux de victoire du palier, en % :
 
-| Construction | S1 | S2 | S3 | S4 | S5 | S6 | S7 | S8 |
-|---|---|---|---|---|---|---|---|---|
-| Aucun Outil | 88 (87) | 79 (77) | 76 (73) | 70 (72) | 48 (43) | 21 (18) | 17 | 31 |
-| Synergies + levier | 88 (87) | 79 (78) | 77 (75) | 73 (72) | 74 (70) | 62 (62) | 64 (61) | 67 (65) |
+| Palier | 0 % d'erreurs | 10 % | 20 % | 30 % |
+|---|---|---|---|---|
+| 1 | 100 | 97 | 73 | 39 |
+| 2 | 100 | 92 | 55 | 16 |
+| 3 | 99 | 84 | 39 | 8 |
+| 4 | 93 | 67 | 33 | 8 |
+| 5 | 84 | 62 | 37 | 13 |
 
-Sans Outil, une run gagne rarement : la boutique est indispensable, comme dans Balatro.
+Ces chiffres correspondent au tableau du GDD v3, sans Outils ni Cartes (la boutique arrive dans une prochaine version).
 
 ## Déploiement
 
-Le workflow `.github/workflows/deploy.yml` publie le jeu à chaque push sur `main`. Avant le premier déploiement, il faut aller dans **Settings > Pages** et choisir **GitHub Actions** comme source. Le workflow `ci.yml` lance le build, les tests et le test de fumée sur chaque pull request.
-
-## Documentation
-
-- [Game design document](docs/gdd.md) : règles, formules, Outils, glossaire. Il fait autorité.
-- [Décisions d'implémentation](docs/DECISIONS.md) : les cas que le GDD ne précise pas, et le choix retenu.
-- [Avancement](docs/PROGRESS.md)
-- [Prompt de développement](docs/prompt-claude-code.md) : les 8 jalons suivis pour coder le prototype.
+Le workflow `.github/workflows/deploy.yml` publie le jeu à chaque push sur `main` (source **GitHub Actions** dans **Settings > Pages**). Le workflow `ci.yml` lance le build, les tests et le test de fumée sur chaque pull request.
 
 ## Auteur
 
