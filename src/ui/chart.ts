@@ -16,6 +16,10 @@ export interface ChartView {
   range: RangeInfo | null;
   /** Bougie du signe à entourer (index dans `candles`), et s'il était faux. */
   sign: { index: number; fake: boolean } | null;
+  /** Loupe : bougie du signe entourée pendant le choix (index dans `candles`), quand le clignotement est allumé. */
+  blink?: number | null;
+  /** Terminal pro : 1re bougie du trade, dessinée en transparence après les autres. */
+  peek?: Candle | null;
 }
 
 type Colors = Record<'up' | 'upHi' | 'down' | 'downHi' | 'grid' | 'line' | 'inkDim' | 'gold', string>;
@@ -68,7 +72,8 @@ export class Chart {
     const H = this.canvas.clientHeight;
     if (!W || !H) return;
     ctx.clearRect(0, 0, W, H);
-    const all = view.forming ? [...view.candles, view.forming] : view.candles;
+    const peek = view.forming ? null : view.peek ?? null;
+    const all = view.forming ? [...view.candles, view.forming] : peek ? [...view.candles, peek] : view.candles;
     if (all.length === 0) return;
     const fs = Math.max(10, Math.min(18, W / 42));
     const axisW = fs * 4.2;
@@ -132,7 +137,7 @@ export class Chart {
     ctx.lineTo(plotW, plotBot + 0.5 + fs * 0.4);
     ctx.stroke();
 
-    const last = vis[vis.length - 1] as Candle;
+    const last = vis[vis.length - (peek ? 2 : 1)] as Candle;
 
     // Support et résistance du range
     if (view.range) {
@@ -178,6 +183,22 @@ export class Chart {
       }
     }
 
+    // Loupe : la bougie du signe est entourée une fois sur deux pendant le choix
+    if (view.blink != null && view.blink >= startIdx) {
+      const c = all[view.blink];
+      if (c) {
+        const sx = x(view.blink - startIdx);
+        const cy = (y(c.h) + y(c.l)) / 2;
+        const ry = Math.max(fs * 1.1, (y(c.l) - y(c.h)) / 2 + fs * 0.5);
+        ctx.strokeStyle = C.gold;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.ellipse(sx, cy, fs * 1.1, ry, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.lineWidth = 1;
+      }
+    }
+
     // Zone de P&L pendant le trade
     if (view.entry && view.direction && view.entry.index >= startIdx) {
       const ex = x(view.entry.index - startIdx);
@@ -217,6 +238,8 @@ export class Chart {
 
     // Bougies et volume
     vis.forEach((c, i) => {
+      const ghost = peek !== null && i === vis.length - 1;
+      ctx.globalAlpha = ghost ? 0.45 : 1;
       const up = c.c >= c.o;
       const col = up ? C.up : C.down;
       const xx = x(i);
@@ -231,9 +254,15 @@ export class Chart {
       const bot = y(Math.min(c.o, c.c));
       ctx.fillRect(Math.round(xx - cw / 2), Math.round(top), Math.round(cw), Math.max(1.5, Math.round(bot - top)));
       const vh = vmax > 0 ? (c.v / vmax) * (volH - fs * 0.4) : 0;
-      ctx.globalAlpha = 0.7;
+      ctx.globalAlpha = ghost ? 0.3 : 0.7;
       ctx.fillRect(Math.round(xx - cw / 2), H - vh, Math.round(cw), vh);
       ctx.globalAlpha = 1;
+      if (ghost) {
+        ctx.fillStyle = C.gold;
+        ctx.textAlign = 'center';
+        ctx.fillText('1re bougie', xx, y(c.h) - fs * 0.8);
+        ctx.textAlign = 'left';
+      }
     });
 
     // Ligne du prix actuel et étiquette, avec ▲▼ pour ne pas dépendre de la couleur

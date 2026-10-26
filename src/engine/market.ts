@@ -240,34 +240,52 @@ export function outcomeFor(lead: Lead): 1 | -1 {
   return ((lead.regime === 'up' ? 1 : -1) * (lead.reverses ? -1 : 1)) as 1 | -1;
 }
 
-/** Les 5 bougies du trade. Une news part toujours contre le mouvement attendu. */
-export function tradeCandles(market: Market, level: Level, lead: Lead): TradeCandles {
+/**
+ * Les 5 bougies du trade, tirées avant le choix du joueur. Une news part toujours contre le
+ * mouvement attendu. `base` est la suite sans la news : la carte Démenti la rend.
+ */
+export interface TradePlan {
+  base: Candle[];
+  news: TradeNews | null;
+  /** Les bougies avec la news (identiques à `base` sans news). */
+  candles: Candle[];
+}
+
+export function planTrade(market: Market, level: Level, lead: Lead): TradePlan {
   const rng = market.rng;
   const dir = outcomeFor(lead);
-  let candles: Candle[];
-  let news: TradeNews | null = null;
+  let base: Candle[];
   if (lead.regime === 'range' && lead.rangeInfo && !lead.reverses) {
-    candles = rangeCandles(rng, market.price, lead.rangeInfo.center, lead.rangeInfo.endPhase, RULES.tradeCandles, level.sigma);
+    base = rangeCandles(rng, market.price, lead.rangeInfo.center, lead.rangeInfo.endPhase, RULES.tradeCandles, level.sigma);
   } else {
-    candles = trendCandles(rng, market.price, RULES.tradeCandles, dir, level.drift * (lead.reverses ? 1.15 : 1), level.sigma);
+    base = trendCandles(rng, market.price, RULES.tradeCandles, dir, level.drift * (lead.reverses ? 1.15 : 1), level.sigma);
   }
-  if (lead.news) {
-    const at = 1 + nextInt(rng, 2);
-    const pool = (NEWS[market.ticker] ?? NEWS.KRCH ?? []).filter((n) => n.dir === -dir);
-    news = { at, ...pick(rng, pool) };
-    let price = candles[at - 1]?.c ?? market.price;
-    const rest: Candle[] = [];
-    for (let i = at; i < RULES.tradeCandles; i++) {
-      const shock = i === at ? 0.016 + nextFloat(rng) * 0.006 : level.drift * 1.3;
-      const close = price * (1 + news.dir * shock + gauss(rng) * level.sigma * 0.6);
-      rest.push(candle(rng, price, close, level.sigma, { buyers: 50 + news.dir * 30, volume: i === at ? 3.2 : 1.6 }));
-      price = close;
-    }
-    candles = candles.slice(0, at).concat(rest);
+  if (!lead.news) return { base, news: null, candles: base };
+  const at = 1 + nextInt(rng, 2);
+  const pool = (NEWS[market.ticker] ?? NEWS.KRCH ?? []).filter((n) => n.dir === -dir);
+  const news: TradeNews = { at, ...pick(rng, pool) };
+  let price = base[at - 1]?.c ?? market.price;
+  const rest: Candle[] = [];
+  for (let i = at; i < RULES.tradeCandles; i++) {
+    const shock = i === at ? 0.016 + nextFloat(rng) * 0.006 : level.drift * 1.3;
+    const close = price * (1 + news.dir * shock + gauss(rng) * level.sigma * 0.6);
+    rest.push(candle(rng, price, close, level.sigma, { buyers: 50 + news.dir * 30, volume: i === at ? 3.2 : 1.6 }));
+    price = close;
   }
+  return { base, news, candles: base.slice(0, at).concat(rest) };
+}
+
+/** Le trade a lieu : ses bougies entrent dans l'historique. */
+export function applyTrade(market: Market, candles: Candle[]): void {
   market.history.push(...candles);
   market.price = last(candles).c;
-  return { candles, news };
+}
+
+/** Tire et joue les 5 bougies du trade, news comprise. */
+export function tradeCandles(market: Market, level: Level, lead: Lead): TradeCandles {
+  const plan = planTrade(market, level, lead);
+  applyTrade(market, plan.candles);
+  return { candles: plan.candles, news: plan.news };
 }
 
 /** Garde les dernières bougies seulement : assez pour le graphique, léger à sauvegarder. */

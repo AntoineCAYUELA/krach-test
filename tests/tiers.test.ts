@@ -3,14 +3,10 @@ import { RULES } from '../src/engine/rules.ts';
 import { TIERS, fakeShare, getTier, levelFor } from '../src/engine/tiers.ts';
 
 describe('paliers', () => {
-  it('reprend les quotas du GDD', () => {
-    expect(TIERS.map((t) => t.quotas)).toEqual([
-      [105, 130, 165],
-      [165, 180, 205, 230, 255, 285],
-      [150, 160, 175, 185, 200, 220, 235, 255, 275, 295],
-      [100, 110, 115, 125, 135, 145, 160, 170, 185, 200],
-      [195, 215, 245, 270, 305, 340],
-    ]);
+  it('a des loyers qui montent de mois en mois', () => {
+    expect(TIERS.map((t) => t.quotas.length)).toEqual([3, 6, 10, 10, 6]);
+    expect(TIERS[0]?.quotas).toEqual([105, 130, 165]);
+    for (const t of TIERS) for (let i = 1; i < t.quotas.length; i++) expect(t.quotas[i]).toBeGreaterThan(t.quotas[i - 1] ?? 0);
   });
 
   it('ajoute une mécanique par palier', () => {

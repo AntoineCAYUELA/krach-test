@@ -14,6 +14,7 @@ Roguelike de trading façon Balatro. Tu paies ton loyer en tradant depuis ta cha
 - P&L = capital × (sortie / entrée − 1), en positif pour un LONG qui monte ou un SHORT qui baisse. Chaque gain d'affilée monte la série : ×1, ×1,5, ×2… jusqu'à ×3. Une perte remet la série à 0.
 - Loyer payé avant la fin : encaisser donne un ticket par trade restant. Loyer raté : un ticket achète un trade bonus (1, puis 2, puis 3 tickets). Sans ticket, le propriétaire envoie un SMS et le palier recommence.
 - 5 paliers, une nouveauté par palier : tendances et retournements, range, faux signaux, news surprises, crypto.
+- Dès le palier 2, le Comptoir ouvre entre deux mois : 3 Outils (effet pour toute la partie) et 2 Cartes (effet unique, jouée avant LONG ou SHORT), payés avec le capital. 12 Outils et 6 Cartes, débloqués en gagnant les paliers ; la Collection, depuis l'accueil, montre ce qui reste à débloquer.
 - Gros trade (série à ×2 ou trade décisif pour le loyer) : bougies ralenties, battements de cœur, écran qui tremble.
 - Après chaque trade, une explication dit ce qu'a fait le marché et la bonne lecture. Chaque terme de trading s'explique dans une bulle à sa première apparition ; le glossaire complet s'ouvre avec G.
 - Clavier : ↑ ou L pour LONG, ↓ ou S pour SHORT, Entrée pour le bouton principal.
@@ -31,10 +32,11 @@ src/
     rules.ts       chiffres du GDD : capital, trades par séance, multi de série, trades bonus
     tiers.ts       les 5 paliers : quotas et paramètres du marché
     market.ts      bougies, régimes (hausse, baisse, range), signes, faux signes, news
-    run.ts         machine à états d'une partie
+    run.ts         machine à états d'une partie, effets des Outils et Cartes
+    shop.ts        offre du Comptoir, achats, reventes, relances
     explain.ts     explication après chaque trade
     progress.ts    paliers débloqués et records
-  data/            glossaire et news
+  data/            Outils et Cartes, glossaire, news
   ui/              écran de jeu, graphique, sons, sauvegarde
   sim/bot.ts       joueur automatique pour l'équilibrage
 scripts/sim.ts     taux de victoire par palier et par taux d'erreur
@@ -59,17 +61,21 @@ npm run build    # vérification TypeScript et build de production dans dist/
 
 ## Équilibrage
 
-`npm run sim` joue 1 000 parties par case avec un joueur qui lit les signes correctement, sauf une part d'erreurs. Taux de victoire du palier, en % :
+`npm run sim` joue 1 000 parties par case avec un joueur qui lit les signes correctement, sauf une part d'erreurs. Avec la boutique, il achète les Outils qui augmentent les gains (pas ceux d'information, qui servent à moins se tromper) et joue ses Cartes au trade suivant. Taux de victoire du palier, en % :
 
-| Palier | 0 % d'erreurs | 10 % | 20 % | 30 % |
-|---|---|---|---|---|
-| 1 | 100 | 97 | 73 | 39 |
-| 2 | 100 | 92 | 55 | 16 |
-| 3 | 99 | 84 | 39 | 8 |
-| 4 | 93 | 67 | 33 | 8 |
-| 5 | 84 | 62 | 37 | 13 |
+| Palier | Boutique | 0 % d'erreurs | 10 % | 20 % | 30 % |
+|---|---|---|---|---|---|
+| 1 | aucune | 100 | 97 | 73 | 39 |
+| 2 | sans achat | 100 | 84 | 40 | 9 |
+| 2 | avec achats | 100 | 86 | 55 | 21 |
+| 3 | sans achat | 97 | 63 | 18 | 1 |
+| 3 | avec achats | 98 | 74 | 41 | 14 |
+| 4 | sans achat | 75 | 39 | 12 | 2 |
+| 4 | avec achats | 84 | 61 | 36 | 15 |
+| 5 | sans achat | 68 | 40 | 17 | 6 |
+| 5 | avec achats | 73 | 56 | 35 | 20 |
 
-Ces chiffres correspondent au tableau du GDD v3, sans Outils ni Cartes (la boutique arrive dans une prochaine version).
+Les loyers des paliers 2 à 5 ont été remontés pour qu'un joueur qui achète garde, à 20 % d'erreurs, le taux de victoire du GDD v3 (55, 39, 33 et 37 %). Le Comptoir devient donc nécessaire, comme la boutique de Balatro.
 
 ## Déploiement
 

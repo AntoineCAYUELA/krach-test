@@ -41,7 +41,9 @@ export interface Tier {
   ticker: string;
 }
 
-// Quotas calibrés par simulation (scripts/sim.ts), sans Outils ni Cartes, en encaissant dès le quota.
+// Quotas calibrés par simulation (scripts/sim.ts), en encaissant dès le quota. P1 sans boutique ;
+// P2 à P5 remontés pour qu'un joueur qui achète en boutique garde le taux de victoire du GDD
+// (GDD v3, section 11, point 5).
 export const TIERS: readonly Tier[] = [
   {
     id: 1, name: 'Palier 1', novelty: 'Tendances, puis retournements', ticker: 'KRCH',
@@ -51,25 +53,25 @@ export const TIERS: readonly Tier[] = [
   },
   {
     id: 2, name: 'Palier 2', novelty: 'Range', ticker: 'KRCH',
-    quotas: [165, 180, 205, 230, 255, 285], range: true, crypto: false,
+    quotas: [205, 220, 250, 280, 315, 350], range: true, crypto: false,
     from: { reversal: 0.3, clarity: 1, fake: 0, news: 0, sigma: 0.0022 },
     to: { reversal: 0.3, clarity: 0.85, fake: 0, news: 0, sigma: 0.003 },
   },
   {
     id: 3, name: 'Palier 3', novelty: 'Faux signaux', ticker: 'KRCH',
-    quotas: [150, 160, 175, 185, 200, 220, 235, 255, 275, 295], range: true, crypto: false,
+    quotas: [215, 230, 255, 270, 290, 320, 340, 370, 400, 430], range: true, crypto: false,
     from: { reversal: 0.3, clarity: 0.9, fake: 0.05, news: 0, sigma: 0.0025 },
     to: { reversal: 0.32, clarity: 0.7, fake: 0.2, news: 0, sigma: 0.0035 },
   },
   {
     id: 4, name: 'Palier 4', novelty: 'News surprises', ticker: 'KRCH',
-    quotas: [100, 110, 115, 125, 135, 145, 160, 170, 185, 200], range: true, crypto: false,
+    quotas: [165, 185, 195, 210, 225, 245, 270, 285, 310, 335], range: true, crypto: false,
     from: { reversal: 0.3, clarity: 0.8, fake: 0.15, news: 0.03, sigma: 0.003 },
     to: { reversal: 0.35, clarity: 0.6, fake: 0.2, news: 0.08, sigma: 0.004 },
   },
   {
     id: 5, name: 'Palier 5', novelty: 'Crypto', ticker: 'KRYP',
-    quotas: [195, 215, 245, 270, 305, 340], range: true, crypto: true,
+    quotas: [300, 330, 375, 410, 465, 520], range: true, crypto: true,
     from: { reversal: 0.32, clarity: 0.7, fake: 0.2, news: 0.06, sigma: 0.0025 },
     to: { reversal: 0.35, clarity: 0.55, fake: 0.2, news: 0.08, sigma: 0.0035 },
   },

@@ -34,7 +34,7 @@ function write(key: string, value: unknown): void {
 
 export function loadRun(): RunState | null {
   const run = read<RunState>(KEYS.run);
-  return run && run.version === 1 ? run : null;
+  return run && run.version === 2 ? run : null;
 }
 
 export const saveRun = (run: RunState): void => write(KEYS.run, run);

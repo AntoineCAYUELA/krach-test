@@ -13,8 +13,8 @@ const opposite = (d: 'long' | 'short'): 'long' | 'short' => (d === 'long' ? 'sho
 function playToCashout(run: RunState): void {
   startSeance(run);
   while (run.phase === 'trading') {
-    const lead = beginTrade(run);
-    finishTrade(run, lead, readingFor(lead));
+    const deal = beginTrade(run);
+    finishTrade(run, deal, readingFor(deal.lead));
   }
 }
 
@@ -56,8 +56,8 @@ describe('partie', () => {
     const run = createRun(1, 3);
     startSeance(run);
     while (run.phase === 'trading') {
-      const lead = beginTrade(run);
-      finishTrade(run, lead, opposite(readingFor(lead)));
+      const deal = beginTrade(run);
+      finishTrade(run, deal, opposite(readingFor(deal.lead)));
     }
     expect(run.phase).toBe('lost');
   });
@@ -86,8 +86,8 @@ describe('partie', () => {
   it('reprend une sauvegarde au même trade', () => {
     const run = createRun(3, 6);
     startSeance(run);
-    const lead = beginTrade(run);
-    finishTrade(run, lead, readingFor(lead));
+    const deal = beginTrade(run);
+    finishTrade(run, deal, readingFor(deal.lead));
     expect(run.phase).toBe('trading');
     const copy = JSON.parse(JSON.stringify(run)) as RunState;
     expect(beginTrade(copy)).toEqual(beginTrade(run));
