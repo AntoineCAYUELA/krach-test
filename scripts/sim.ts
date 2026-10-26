@@ -1,42 +1,11 @@
-// Simulation headless d'équilibrage (npm run sim) : compare le robot naïf au tableau du GDD 7.3.
-// Usage : node scripts/sim.ts [nombre de runs par construction, 5000 par défaut]
+// Calibrage : taux de parties gagnées par palier, sans Outils ni Cartes.
+// Usage : npm run sim [-- nombre de parties par cas]
+import { winRate } from '../src/sim/bot.ts';
+import { TIERS } from '../src/engine/tiers.ts';
 
-import { BUILDS, passRates, simulateRun } from '../src/sim/bot.ts';
-
-/** Tableau 7.3 du GDD (en %), null = case non comparable (échantillon trop petit). */
-const GDD_TABLE: Record<string, (number | null)[]> = {
-  'Aucun Outil': [87, 77, 73, 72, 43, 18, 12, null],
-  'Communs seulement': [87, 78, 77, 71, 48, 29, 21, null],
-  Synergies: [87, 78, 75, 72, 70, 62, 61, 65],
-};
-
-/** Cases vérifiées par le prompt : « Aucun Outil » S1 à S6, « Synergies » S1 à S8. */
-const CHECKED: Record<string, number> = { 'Aucun Outil': 6, Synergies: 8 };
-const TOLERANCE = 8;
-
-const runs = Number(process.argv[2] ?? 5000);
-let failures = 0;
-const start = Date.now();
-
-for (const build of BUILDS) {
-  const outcomes = Array.from({ length: runs }, (_, seed) => simulateRun(seed + 1, build));
-  const rates = passRates(outcomes);
-  const expected = GDD_TABLE[build.name];
-  const checkedUpTo = CHECKED[build.name] ?? 0;
-  const cells = rates.map((r, i) => {
-    const value = Number.isNaN(r.rate) ? '  —' : `${Math.round(r.rate * 100)}`.padStart(3);
-    const target = expected?.[i];
-    if (i < checkedUpTo && target != null) {
-      const ok = Math.abs(r.rate * 100 - target) <= TOLERANCE;
-      if (!ok) failures++;
-      return `${value} (${target}${ok ? ' ✓' : ' ✗'})`;
-    }
-    return `${value}`;
-  });
-  console.log(`${build.name.padEnd(22)} ${cells.join(' | ')}`);
-  console.log(`${''.padEnd(22)} runs atteignant chaque séance : ${rates.map((r) => r.reached).join(' / ')}`);
+const games = Number(process.argv[2] ?? 2000);
+console.log(`${games} parties par cas, joueur qui lit les signes avec 0 / 10 / 20 / 30 % d'erreurs\n`);
+for (const tier of TIERS) {
+  const rates = [0, 0.1, 0.2, 0.3].map((e) => `${Math.round(winRate(tier.id, e, games) * 100)} %`.padStart(5));
+  console.log(`${tier.name} (${tier.novelty}) : ${rates.join('  ')}`);
 }
-
-console.log(`\n${runs} runs par construction, ${((Date.now() - start) / 1000).toFixed(1)} s.`);
-console.log(failures === 0 ? `Toutes les cases vérifiées sont à ±${TOLERANCE} points du GDD.` : `${failures} case(s) hors tolérance (±${TOLERANCE} points).`);
-process.exit(failures === 0 ? 0 : 1);

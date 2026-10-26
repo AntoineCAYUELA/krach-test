@@ -1,109 +1,61 @@
-// Accès au localStorage, protégé : en navigation privée ou si le stockage est bloqué,
-// le jeu fonctionne sans sauvegarde (le bouton « Continuer » est alors masqué).
-
+// Sauvegarde dans le navigateur (GDD v3, section 9). Chaque accès est protégé :
+// navigation privée ou stockage bloqué ne doivent jamais casser le jeu.
+import { createProgress, type Progress } from '../engine/progress.ts';
 import type { RunState } from '../engine/run.ts';
 
-const PREFIX = 'krach-test/';
+const KEYS = {
+  run: 'krach-test/v3/run',
+  progress: 'krach-test/v3/progress',
+  settings: 'krach-test/v3/settings',
+};
 
-function probe(): boolean {
-  try {
-    const key = `${PREFIX}probe`;
-    localStorage.setItem(key, '1');
-    localStorage.removeItem(key);
-    return true;
-  } catch {
-    return false;
-  }
+export interface Settings {
+  muted: boolean;
+  /** Animation rapide (tests automatiques, joueurs pressés). */
+  fast: boolean;
 }
 
-export const storageAvailable = probe();
-
 function read<T>(key: string): T | null {
-  if (!storageAvailable) return null;
   try {
-    const raw = localStorage.getItem(PREFIX + key);
-    return raw === null ? null : (JSON.parse(raw) as T);
+    const raw = localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
   } catch {
     return null;
   }
 }
 
 function write(key: string, value: unknown): void {
-  if (!storageAvailable) return;
   try {
-    localStorage.setItem(PREFIX + key, JSON.stringify(value));
+    localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    // Quota dépassé ou stockage bloqué : on continue sans sauvegarde.
+    // stockage indisponible : la partie continue sans sauvegarde
   }
 }
 
-function remove(key: string): void {
-  if (!storageAvailable) return;
-  try {
-    localStorage.removeItem(PREFIX + key);
-  } catch {
-    // Rien à faire.
-  }
-}
-
-// --- Run en cours
-
-/** Run sauvegardée, ou null si absente ou d'un format inconnu (elle est alors ignorée). */
 export function loadRun(): RunState | null {
-  const run = read<RunState>('run');
-  if (!run || run.version !== 2 || typeof run.phase !== 'string' || !Array.isArray(run.deck) || !run.seance) return null;
-  return run;
+  const run = read<RunState>(KEYS.run);
+  return run && run.version === 1 ? run : null;
 }
 
-export function saveRun(run: RunState | null): void {
-  if (!run || run.phase === 'victory' || run.phase === 'defeat') remove('run');
-  else write('run', run);
+export const saveRun = (run: RunState): void => write(KEYS.run, run);
+
+export function clearRun(): void {
+  try {
+    localStorage.removeItem(KEYS.run);
+  } catch {
+    // rien à faire
+  }
 }
 
-// --- Termes du glossaire déjà rencontrés
-
-export function loadSeenTerms(): Set<string> {
-  return new Set(read<string[]>('seen-terms') ?? []);
+export function loadProgress(): Progress {
+  const p = read<Progress>(KEYS.progress);
+  return p && p.version === 1 ? p : createProgress();
 }
 
-export function saveSeenTerms(seen: Set<string>): void {
-  write('seen-terms', [...seen]);
-}
-
-// --- Réglages
-
-export interface Settings {
-  fastAnimation: boolean;
-  /** Vue à la première personne autour de l'interface (GDD 13.5). */
-  decor: boolean;
-  chart: { sma5: boolean; sma20: boolean; volume: boolean; levels: boolean; rsi: boolean };
-}
-
-export const DEFAULT_SETTINGS: Settings = {
-  fastAnimation: false,
-  decor: true,
-  chart: { sma5: true, sma20: true, volume: true, levels: true, rsi: true },
-};
+export const saveProgress = (p: Progress): void => write(KEYS.progress, p);
 
 export function loadSettings(): Settings {
-  const saved = read<Partial<Settings>>('settings');
-  return { ...DEFAULT_SETTINGS, ...saved, chart: { ...DEFAULT_SETTINGS.chart, ...saved?.chart } };
+  return { muted: false, fast: false, ...read<Partial<Settings>>(KEYS.settings) };
 }
 
-export function saveSettings(settings: Settings): void {
-  write('settings', settings);
-}
-
-// --- Premier lancement (avertissement de risque et tutoriel)
-
-export function isOnboarded(): boolean {
-  return read<boolean>('onboarded') === true;
-}
-
-export function setOnboarded(): void {
-  write('onboarded', true);
-}
-
-export function clearAll(): void {
-  for (const key of ['run', 'seen-terms', 'settings', 'onboarded']) remove(key);
-}
+export const saveSettings = (s: Settings): void => write(KEYS.settings, s);
