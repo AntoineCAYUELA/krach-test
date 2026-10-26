@@ -1,14 +1,21 @@
 // Écran de jeu : relie le moteur (src/engine) à l'affichage. Le moteur règle chaque trade
 // d'un coup ; l'écran dévoile ensuite les bougies une par une.
 import { GLOSSARY, glossaryEntry } from '../data/glossary.ts';
-import { explain } from '../engine/explain.ts';
-import { readingFor, type Candle, type Lead } from '../engine/market.ts';
-import { MAX_TIER, markSeen, recordWin, type Progress } from '../engine/progress.ts';
-import { RULES, isBigTrade, multiplier, type Direction, type Settlement } from '../engine/rules.ts';
 import {
-  beginTrade, buyBonusTrade, canBuyBonus, cashOut, createRun, currentLevel, finishTrade, giveUp, keepTrading,
-  nextBonusCost, nextSeance, quota, remainingToQuota, seanceCount, seanceGain, startSeance, type RunState,
+  CARDS, RARITY_NAME, TOOLS, cardDef, toolDef, unlockedItems, type CardId, type ToolId,
+} from '../data/items.ts';
+import { explain } from '../engine/explain.ts';
+import { readingFor, type Candle } from '../engine/market.ts';
+import { MAX_TIER, markSeen, recordWin, type Progress } from '../engine/progress.ts';
+import { RULES, isBigTrade, type Direction, type Settlement } from '../engine/rules.ts';
+import {
+  beginTrade, buyBonusTrade, canBuyBonus, canPlayCard, cashOut, createRun, currentLevel, currentMulti, finishTrade,
+  giveUp, interestFor, keepTrading, multiMax, nextBonusCost, nextSeance, playCard, quota, remainingToQuota,
+  seanceCount, seanceGain, startSeance, type Deal, type RunState, type TradeOutcome,
 } from '../engine/run.ts';
+import {
+  SHOP, buyCard, buyTool, canBuyCard, canBuyTool, canReroll, gainCut, leaveShop, reroll, rerollCost, sellTool,
+} from '../engine/shop.ts';
 import { getTier, TIERS } from '../engine/tiers.ts';
 import { Chart } from './chart.ts';
 import { int, money, money0, multiText, plural, richText, signed, signed0 } from './format.ts';
@@ -46,6 +53,7 @@ const TEMPLATE = `
           <div class="flash" id="flash"></div>
           <div class="pop" id="pop"></div>
           <div class="news" id="news" hidden><span class="tag">NEWS</span><span id="news-title"></span></div>
+          <div class="hints" id="hints"></div>
         </div>
         <div class="side">
           <button class="order long" id="btn-long" type="button" disabled>${ARROW_UP}LONG</button>
@@ -58,6 +66,10 @@ const TEMPLATE = `
               <div class="gauge-head"><span class="b">Acheteurs ▲</span><span class="s">Vendeurs ▼</span></div>
               <div class="gauge"><i id="gauge-fill"></i><b class="bl" id="buy">50 %</b><b class="sl" id="sell">50 %</b></div>
             </div>
+          </div>
+          <div class="kit" id="kit" hidden>
+            <div class="kit-tools" id="kit-tools"></div>
+            <div class="kit-hand" id="kit-hand"></div>
           </div>
         </div>
       </div>
@@ -85,7 +97,9 @@ export class Game {
   private ui: UiPhase = 'menu';
   private shown: Candle[] = [];
   private forming: Candle | null = null;
-  private lead: Lead | null = null;
+  private deal: Deal | null = null;
+  private blinkOn = false;
+  private blinkTimer = 0;
   private entry: { price: number; index: number } | null = null;
   private direction: Direction | null = null;
   private showSign = false;
@@ -109,7 +123,7 @@ export class Game {
     (window as unknown as { krachState: () => unknown }).krachState = () => ({
       ui: this.ui,
       run: this.run,
-      reading: this.lead ? readingFor(this.lead) : null,
+      reading: this.deal ? readingFor(this.deal.lead) : null,
     });
   }
 
@@ -128,6 +142,10 @@ export class Game {
       setMuted(this.settings.muted);
       saveSettings(this.settings);
       this.renderMute();
+    });
+    this.$('kit-hand').addEventListener('click', (e) => {
+      const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-card]');
+      if (btn?.dataset.card) this.playCardUi(btn.dataset.card as CardId);
     });
     this.$('menu-btn').addEventListener('click', () => {
       if (this.ui === 'decide' || this.ui === 'overlay') this.menu();
@@ -170,6 +188,9 @@ export class Game {
         void this.choose('short');
       } else if (e.key === 'g' || e.key === 'G') {
         if (this.ui === 'decide') this.glossary(() => this.closeOverlayTo('decide'));
+      } else if (e.key === '1' || e.key === '2') {
+        const id = this.run?.hand[Number(e.key) - 1];
+        if (id) this.playCardUi(id);
       }
     });
   }
@@ -225,7 +246,10 @@ export class Game {
         <span class="tier-meta">${plural(t.quotas.length, 'mois')}${record ? ` · record ${money0(record)}` : ''}</span>
       </button>`;
     }).join('');
-    const actions: Record<string, () => void> = { glossary: () => this.glossary(() => this.menu()) };
+    const actions: Record<string, () => void> = {
+      glossary: () => this.glossary(() => this.menu()),
+      collection: () => this.collection(),
+    };
     for (const t of TIERS) actions[`tier-${t.id}`] = () => this.newRun(t.id);
     if (saved) actions.resume = () => this.resume(saved);
     this.overlay(`<div class="card menu">
@@ -233,7 +257,10 @@ export class Game {
       <p class="tagline">Paie ton loyer en tradant depuis ta chambre. Lis le graphique, choisis LONG ou SHORT, enchaîne les gains.</p>
       ${saved ? `<button class="cta primary" type="button" data-act="resume">Continuer · ${getTier(saved.tier).name}, mois ${saved.seance + 1}<span class="key">Entrée</span></button>` : ''}
       <div class="tiers">${tiers}</div>
-      <div class="row-actions"><button class="cta ghost" type="button" data-act="glossary">Glossaire<span class="key">G</span></button></div>
+      <div class="row-actions">
+        <button class="cta ghost" type="button" data-act="collection">Collection</button>
+        <button class="cta ghost" type="button" data-act="glossary">Glossaire<span class="key">G</span></button>
+      </div>
       <p class="disclaimer">Entreprises, prix et news inventés. Le vrai trading fait perdre de l'argent à la majorité des particuliers.</p>
     </div>`, actions);
     if (!saved) {
@@ -248,6 +275,25 @@ export class Game {
     const rows = GLOSSARY.map((e) => `<div class="g-row"><b>${e.term}</b><span>${e.definition}</span></div>`).join('');
     this.overlay(`<div class="card glossary"><div class="eyebrow">Glossaire</div><div class="g-list">${rows}</div>
       <button class="cta primary" type="button" data-act="back">Retour<span class="key">Entrée</span></button></div>`, { back });
+  }
+
+  /** Outils et Cartes débloqués ou verrouillés (GDD v3, section 7). */
+  private collection(): void {
+    const unlocked = unlockedItems(this.progress.beaten);
+    const lock = (n: number): string => `🔒 Gagne le palier ${n}`;
+    const tools = TOOLS.map((t) => {
+      const ok = unlocked.tools.includes(t.id);
+      return `<div class="item${ok ? '' : ' locked'}"><b>${t.icon} ${t.name}</b><em>${RARITY_NAME[t.rarity]} · ${t.price} $</em><span>${ok ? t.effect : lock(t.unlock)}</span></div>`;
+    }).join('');
+    const cards = CARDS.map((c) => {
+      const ok = unlocked.cards.includes(c.id);
+      return `<div class="item card-item${ok ? '' : ' locked'}"><b>${c.icon} ${c.name}</b><em>Carte · ${c.price} $</em><span>${ok ? c.effect : lock(c.unlock)}</span></div>`;
+    }).join('');
+    this.overlay(`<div class="card wide collection"><div class="eyebrow">Collection · ${unlocked.tools.length + unlocked.cards.length} / ${TOOLS.length + CARDS.length}</div>
+      <p>Le Comptoir vend ce que tu as débloqué, à partir du palier 2.</p>
+      <h3>Outils <small>effet pour toute la partie</small></h3><div class="items">${tools}</div>
+      <h3>Cartes <small>effet unique, à jouer avant LONG ou SHORT</small></h3><div class="items">${cards}</div>
+      <button class="cta primary" type="button" data-act="back">Retour<span class="key">Entrée</span></button></div>`, { back: () => this.menu() });
   }
 
   // ---------- Bulles du glossaire ----------
@@ -284,7 +330,7 @@ export class Game {
 
   private newRun(tier: number): void {
     const seed = (Date.now() ^ Math.floor(Math.random() * 1e9)) >>> 0;
-    this.run = createRun(tier, seed);
+    this.run = createRun(tier, seed, unlockedItems(this.progress.beaten));
     this.shown = this.run.market.history.slice();
     this.resetTradeView();
     saveRun(this.run);
@@ -303,12 +349,15 @@ export class Game {
       case 'cashout': return this.cashOutChoice();
       case 'bonus': return this.bonusChoice();
       case 'seanceWon': return this.seanceWon();
+      case 'shop': return this.shopScreen();
       default: clearRun(); return this.menu();
     }
   }
 
   private resetTradeView(): void {
-    this.lead = null;
+    this.stopBlink();
+    this.deal = null;
+    this.$('hints').innerHTML = '';
     this.entry = null;
     this.direction = null;
     this.forming = null;
@@ -330,6 +379,7 @@ export class Game {
       <div class="eyebrow">${tierLabel(run.tier)} · mois ${n} sur ${seanceCount(run)}</div>
       <h2>Loyer du mois : <span class="n">${quota(run)} $</span> à gagner en <span class="n">${RULES.tradesPerSeance}</span> trades</h2>
       ${seanceBriefing(run.tier, run.seance, currentLevel(run))}
+      ${interestFor(run) > 0 ? `<p>💰 Intérêts du mois : <span class="up">${signed(interestFor(run))}</span> sur ton capital (ils ne comptent pas dans le loyer).</p>` : ''}
       <button class="cta primary" type="button" data-act="go">${n === 1 ? 'Ouvrir le marché' : 'Commencer le mois'}<span class="key">Entrée</span></button>
     </div>`, {
       go: () => {
@@ -348,8 +398,9 @@ export class Game {
     this.resetTradeView();
     this.renderAll();
     this.note('Le marché bouge… regarde la tendance, la jauge et les dernières bougies.');
-    const lead = beginTrade(run);
-    this.lead = lead;
+    const deal = beginTrade(run);
+    const lead = deal.lead;
+    this.deal = deal;
     this.shown = run.market.history.slice(0, run.market.history.length - lead.candles.length);
     for (const c of lead.candles) {
       this.shown.push(c);
@@ -359,32 +410,103 @@ export class Game {
     }
     this.ui = 'decide';
     this.setButtons(true);
+    this.renderHints();
+    this.renderKit();
+    if (deal.hints.flash !== null) this.startBlink();
+    this.draw();
     const first = run.tier === 1 && run.seance === 0 && run.results.length === 0;
     this.note(first
       ? '<b>LONG</b> si tu penses que le prix va monter, <b>SHORT</b> s\'il va baisser. Clavier : ↑ ou ↓.'
-      : 'À toi : <b>LONG</b> (↑) ou <b>SHORT</b> (↓) ?');
+      : `À toi : <b>LONG</b> (↑) ou <b>SHORT</b> (↓) ?${run.hand.length ? ' Tes Cartes se jouent avant (touches 1 et 2).' : ''}`);
+  }
+
+  /** Joue une Carte pendant le choix, avant LONG ou SHORT. */
+  private playCardUi(id: CardId): void {
+    const run = this.run;
+    const deal = this.deal;
+    if (this.ui !== 'decide' || !run || !deal || !canPlayCard(run, deal, id)) return;
+    sfx.click();
+    playCard(run, deal, id);
+    this.renderAll();
+    this.renderHints();
+    this.renderKit();
+  }
+
+  /** Ce que montrent les Outils et les Cartes jouées, au-dessus du graphique. */
+  private renderHints(): void {
+    const deal = this.deal;
+    const box = this.$('hints');
+    if (!deal) {
+      box.innerHTML = '';
+      return;
+    }
+    const h = deal.hints;
+    const range = deal.lead.regime === 'range';
+    const lines: string[] = [];
+    if (h.flash !== null) lines.push('🔍 Loupe : la bougie qui clignote porte un signe');
+    if (h.verdict) lines.push(`📡 Détecteur : signe <b class="${h.verdict === 'fiable' ? 'up' : 'down'}">${h.verdict}</b>`);
+    if (h.rumor) lines.push(`📰 Rumeur : une news va faire <b class="${h.rumor > 0 ? 'up' : 'down'}">${h.rumor > 0 ? 'monter ▲' : 'baisser ▼'}</b> le prix`);
+    if (h.peek) lines.push('🖥️ Terminal pro : la 1re bougie du trade est affichée');
+    if (h.analyst) {
+      const text = range
+        ? (h.analyst === 'reverse' ? 'le niveau va casser' : 'le prix va rebondir sur le niveau')
+        : (h.analyst === 'reverse' ? 'le mouvement va se retourner' : 'le mouvement va continuer');
+      lines.push(`📋 Analyste : <b>${text}</b> (hors news)`);
+    }
+    for (const id of deal.played) {
+      if (id === 'leverage') lines.push('✖️ <b class="gold">Mise doublée</b> : gain et perte ×2');
+      if (id === 'insurance') lines.push('🛡️ Assuré : une perte sera annulée');
+      if (id === 'denial') lines.push('🚫 Démenti prêt : une news serait annulée');
+      if (id === 'tickets') lines.push('🎟️ +2 tickets');
+      if (id === 'overtime') lines.push('⏱️ +1 trade ce mois-ci');
+    }
+    box.innerHTML = lines.map((l) => `<div class="hint">${l}</div>`).join('');
+  }
+
+  /** Loupe : la bougie du signe clignote pendant le choix. */
+  private startBlink(): void {
+    this.stopBlink();
+    if (this.reduceMotion) {
+      this.blinkOn = true;
+      return;
+    }
+    this.blinkTimer = window.setInterval(() => {
+      this.blinkOn = !this.blinkOn;
+      this.draw();
+    }, 450);
+    this.blinkOn = true;
+  }
+
+  private stopBlink(): void {
+    window.clearInterval(this.blinkTimer);
+    this.blinkTimer = 0;
+    this.blinkOn = false;
   }
 
   private async choose(direction: Direction): Promise<void> {
-    if (this.ui !== 'decide' || !this.lead) return;
+    if (this.ui !== 'decide' || !this.deal) return;
     const run = this.R;
-    const lead = this.lead;
+    const deal = this.deal;
+    const lead = deal.lead;
     this.ui = 'trade';
+    this.stopBlink();
+    this.renderKit();
     this.direction = direction;
     sfx.click();
     this.setButtons(false);
     this.$(direction === 'long' ? 'btn-long' : 'btn-short').classList.add('picked');
     const capital = run.capital;
     const streak = run.streak;
-    const big = isBigTrade(capital, streak, remainingToQuota(run));
-    const outcome = finishTrade(run, lead, direction);
+    const lever = deal.played.includes('leverage') ? 2 : 1;
+    const big = isBigTrade(capital, streak, remainingToQuota(run), lever, multiMax(run));
+    const outcome = finishTrade(run, deal, direction);
     // Le moteur a déjà réglé le trade : on affiche l'état d'avant pendant l'animation.
     const after = { capital: run.capital, streak: run.streak };
     run.capital = capital;
     run.streak = streak;
     this.entry = { price: outcome.entry, index: this.shown.length - 1 };
     this.note(`Position ${direction === 'long' ? 'LONG' : 'SHORT'} ouverte à ${outcome.entry.toFixed(2)}. Le trade dure 5 bougies.${big ? ' <b class="gold">Gros trade.</b>' : ''}`);
-    const sign = direction === 'long' ? 1 : -1;
+    const sign = (direction === 'long' ? 1 : -1) * lever;
     const stopTension = big ? this.tension() : null;
     const ms = this.settings.fast ? 40 : this.reduceMotion ? 250 : big ? 1000 : 620;
     for (let i = 0; i < outcome.trade.candles.length; i++) {
@@ -405,7 +527,20 @@ export class Game {
     stopTension?.();
     run.capital = after.capital;
     run.streak = after.streak;
-    await this.showResult(capital, streak, outcome.settlement, () => explain(lead, outcome.trade.news, direction, outcome.settlement.raw > 0, currentLevel(run)));
+    await this.showResult(capital, streak, outcome.settlement, () =>
+      explain(lead, outcome.trade.news, direction, outcome.settlement.raw > 0, currentLevel(run)) + this.itemNotes(outcome, streak));
+  }
+
+  /** Ce que les Outils et Cartes ont changé à ce trade, ajouté à l'explication. */
+  private itemNotes(o: TradeOutcome, streakBefore: number): string {
+    const r = o.settlement;
+    const notes: string[] = [];
+    if (o.denied) notes.push('Démenti : la news a été annulée.');
+    if (r.bonus > 0) notes.push(`Outils : **+${Math.round(r.bonus * 100)} %** sur le gain.`);
+    if (r.capped) notes.push('Stop-loss : perte plafonnée.');
+    if (r.insured) notes.push('Assurance : perte annulée, série gardée.');
+    if (!r.insured && r.raw <= 0 && r.nextStreak > 0) notes.push(`Sang-froid : série ${streakBefore} → ${r.nextStreak}.`);
+    return notes.length ? ` ${notes.join(' ')}` : '';
   }
 
   /** Effets des gros trades (bible, section 8) : cœur qui accélère, écran qui vibre, bords rouges. */
@@ -458,11 +593,16 @@ export class Game {
     const pop = this.$('pop');
     const flash = this.$('flash');
     const win = r.raw > 0;
-    const lostStreak = !win && streakBefore > 0;
+    const lostStreak = !win && r.nextStreak < streakBefore;
+    const stamps = [
+      r.bonus > 0 ? `<div class="stamp">OUTILS +${Math.round(r.bonus * 100)} %</div>` : '',
+      r.multi > 1 ? `<div class="stamp">SÉRIE ${multiText(r.multi)}</div>` : '',
+    ].join('');
+    const lossStamp = r.insured ? 'Assuré' : r.capped ? 'Stop-loss' : lostStreak ? (r.nextStreak > 0 ? 'Série ÷2' : 'Série perdue') : '';
     pop.className = 'pop';
     pop.innerHTML = win
-      ? `<div class="raw">${signed(r.raw)}</div>${r.multi > 1 ? `<div class="stamp">SÉRIE ${multiText(r.multi)}</div><div class="total">${signed(r.gain)}</div>` : ''}`
-      : `<div class="raw">${signed(r.raw)}</div>${lostStreak ? '<div class="stamp">Série perdue</div>' : ''}`;
+      ? `<div class="raw">${signed(r.raw)}</div>${stamps ? `${stamps}<div class="total">${signed(r.gain)}</div>` : ''}`
+      : `<div class="raw">${signed(r.raw)}</div>${lossStamp ? `<div class="stamp">${lossStamp}</div>` : ''}${r.gain !== r.raw ? `<div class="total">${signed(r.gain)}</div>` : ''}`;
     void pop.offsetWidth;
     pop.classList.add('show', win ? 'win' : 'loss');
     flash.className = 'flash';
@@ -570,23 +710,90 @@ export class Game {
     this.overlay(`<div class="card">
       <div class="eyebrow">Mois ${run.seance + 1} réussi</div>
       <h2><span class="up big">${signed(seanceGain(run))}</span></h2>
-      <p>Loyer de ${quota(run)} $ payé${cashed > 0 ? `, avec ${plural(cashed, 'trade')} d'avance : <span class="gold">+${cashed} 🎟</span>` : ''}. Ta série continue : multi actuel <span class="gold">${multiText(multiplier(run.streak))}</span>.</p>
+      <p>Loyer de ${quota(run)} $ payé${cashed > 0 ? `, avec ${plural(cashed, 'trade')} d'avance : <span class="gold">+${cashed} 🎟</span>` : ''}. Ta série continue : multi actuel <span class="gold">${multiText(currentMulti(run))}</span>.</p>
       <button class="cta primary" type="button" data-act="next">Mois suivant<span class="key">Entrée</span></button>
     </div>`, {
       next: () => {
         nextSeance(run);
         this.renderAll();
-        this.seanceIntro();
+        if (run.phase === 'shop') this.shopScreen();
+        else this.seanceIntro();
       },
     });
+  }
+
+  /** Le Comptoir : boutique entre deux mois (GDD v3, section 6 ; bible : un site un peu louche). */
+  private shopScreen(): void {
+    const run = this.R;
+    const shop = run.shop;
+    if (!shop) return this.seanceIntro();
+    saveRun(run);
+    const t = (id: string | null, word: string): string => (id ? `<dfn data-term="${id}">${word}</dfn>` : word);
+    const cut = (price: number): string => `−${Math.max(1, Math.round(gainCut(run, price) * 100))} % de gains`;
+    const tools = shop.offer.tools.map((id) => {
+      const d = toolDef(id);
+      return `<div class="item ${d.rarity}"><b>${d.icon} ${t(d.term, d.name)}</b><em>${RARITY_NAME[d.rarity]} · Outil</em><span>${d.effect}</span>
+        <button class="buy" type="button" data-act="tool-${id}" ${canBuyTool(run, id) ? '' : 'disabled'}>${d.price} $ <small>${cut(d.price)}</small></button></div>`;
+    });
+    const cards = shop.offer.cards.map((id) => {
+      const d = cardDef(id);
+      return `<div class="item card-item"><b>${d.icon} ${t(d.term, d.name)}</b><em>Carte · usage unique</em><span>${d.effect}</span>
+        <button class="buy" type="button" data-act="card-${id}" ${canBuyCard(run, id) ? '' : 'disabled'}>${d.price} $ <small>${cut(d.price)}</small></button></div>`;
+    });
+    const owned = run.tools.map((id) => {
+      const d = toolDef(id);
+      return `<span class="owned" title="${d.effect}">${d.icon} ${d.name}<button type="button" data-act="sell-${id}">Revendre +${d.price / 2} $</button></span>`;
+    }).join('');
+    const hand = run.hand.map((id) => `<span class="owned" title="${cardDef(id).effect}">${cardDef(id).icon} ${cardDef(id).name}</span>`).join('');
+    const actions: Record<string, () => void> = {
+      leave: () => {
+        leaveShop(run);
+        this.renderAll();
+        this.seanceIntro();
+      },
+      reroll: () => {
+        reroll(run);
+        this.renderAll();
+        this.shopScreen();
+      },
+    };
+    const after = (fn: () => void) => (): void => {
+      fn();
+      sfx.goal();
+      this.renderAll();
+      this.shopScreen();
+    };
+    for (const id of shop.offer.tools) actions[`tool-${id}`] = after(() => buyTool(run, id));
+    for (const id of shop.offer.cards) actions[`card-${id}`] = after(() => buyCard(run, id));
+    for (const id of run.tools) actions[`sell-${id}`] = after(() => sellTool(run, id as ToolId));
+    this.overlay(`<div class="card wide shop">
+      <div class="shop-head"><div><div class="eyebrow">Le Comptoir · avant le mois ${run.seance + 1}</div>
+        <h2>Capital <span class="n">${money(run.capital)}</span></h2></div><div class="tickets-big">🎟 ${run.tickets}</div></div>
+      <p class="dim">Tout se paie avec ton ${t('capital', 'capital')}. Tes gains suivants baissent d'autant : un achat doit rapporter plus qu'il ne coûte. Le capital ne descend jamais sous ${SHOP.floor} $.</p>
+      <h3>Outils <small>effet pour toute la partie · ${run.tools.length}/${SHOP.maxTools}</small></h3>
+      <div class="items">${tools.join('') || '<p class="dim">Plus rien à vendre.</p>'}</div>
+      <h3>Cartes <small>effet unique, à jouer avant LONG ou SHORT · ${run.hand.length}/${SHOP.maxCards} en main</small></h3>
+      <div class="items">${cards.join('') || '<p class="dim">Plus de cartes.</p>'}</div>
+      ${owned || hand ? `<div class="owned-list">${owned}${hand}</div>` : ''}
+      <div class="row-actions">
+        <button class="cta primary" type="button" data-act="leave">Commencer le mois ${run.seance + 1}<span class="key">Entrée</span></button>
+        <button class="cta ghost" type="button" data-act="reroll" ${canReroll(run) ? '' : 'disabled'}>Relancer l'offre · ${rerollCost(run)} $</button>
+      </div>
+    </div>`, actions);
   }
 
   private tierWon(): void {
     const run = this.R;
     sfx.goal();
     clearRun();
+    const before = unlockedItems(this.progress.beaten);
     const record = recordWin(this.progress, run.tier, run.capital);
     saveProgress(this.progress);
+    const after = unlockedItems(this.progress.beaten);
+    const fresh = [
+      ...after.tools.filter((id) => !before.tools.includes(id)).map((id) => toolDef(id)),
+      ...after.cards.filter((id) => !before.cards.includes(id)).map((id) => cardDef(id)),
+    ].map((d) => `${d.icon} ${d.name}`);
     const hasNext = run.tier < MAX_TIER;
     const actions: Record<string, () => void> = { menu: () => this.menu(), again: () => this.newRun(run.tier) };
     if (hasNext) actions.next = () => this.newRun(run.tier + 1);
@@ -595,6 +802,7 @@ export class Game {
       <h2>Tous les loyers sont payés</h2>
       ${this.stats(record)}
       ${hasNext ? `<p><span class="gold">Débloqué :</span> ${getTier(run.tier + 1).name}, ${getTier(run.tier + 1).novelty.toLowerCase()}.</p>` : '<p>Tu as fini la base du jeu. Chaque palier reste rejouable pour battre ton record.</p>'}
+      ${fresh.length ? `<p><span class="gold">Nouveau au Comptoir :</span> ${fresh.join(', ')}.</p>` : ''}
       <div class="row-actions">
         ${hasNext ? '<button class="cta primary" type="button" data-act="next">Palier suivant<span class="key">Entrée</span></button>' : ''}
         <button class="cta ${hasNext ? 'ghost' : 'primary'}" type="button" data-act="again">Rejouer ce palier</button>
@@ -650,7 +858,30 @@ export class Game {
     this.renderTop();
     this.renderInfo();
     this.renderPills();
+    this.renderKit();
     this.draw();
+  }
+
+  /** Outils actifs et Cartes en main, sous la jauge. */
+  private renderKit(): void {
+    const run = this.run;
+    const kit = this.$('kit');
+    if (!run || (run.tools.length === 0 && run.hand.length === 0)) {
+      kit.hidden = true;
+      return;
+    }
+    kit.hidden = false;
+    this.$('kit-tools').innerHTML = run.tools
+      .map((id) => { const d = toolDef(id); return `<span class="chip" title="${d.name} : ${d.effect}">${d.icon}</span>`; })
+      .join('');
+    const deciding = this.ui === 'decide' && this.deal !== null;
+    this.$('kit-hand').innerHTML = run.hand
+      .map((id, i) => {
+        const d = cardDef(id);
+        const ok = deciding && this.deal !== null && canPlayCard(run, this.deal, id);
+        return `<button class="play-card" type="button" data-card="${id}" title="${d.effect}" ${ok ? '' : 'disabled'}><span class="k">${i + 1}</span>${d.icon} ${d.name}</button>`;
+      })
+      .join('');
   }
 
   private renderTop(livePrice?: number): void {
@@ -688,7 +919,7 @@ export class Game {
       pnl.textContent = signed(livePnl);
       pnl.className = `pnl ${livePnl >= 0 ? 'pos' : 'neg'}`;
     }
-    this.$('streak').textContent = `${run.streak} · ${multiText(multiplier(run.streak))}`;
+    this.$('streak').textContent = `${run.streak} · ${multiText(currentMulti(run))}`;
   }
 
   private renderPills(): void {
@@ -724,7 +955,8 @@ export class Game {
   }
 
   private draw(): void {
-    const lead = this.lead;
+    const lead = this.deal?.lead ?? null;
+    const hints = this.deal?.hints;
     const showRange = lead?.regime === 'range' && this.ui !== 'lead';
     const last = this.forming ?? this.shown[this.shown.length - 1];
     if (last) this.renderGauge(last.b);
@@ -735,6 +967,8 @@ export class Game {
       direction: this.direction,
       range: showRange ? lead.rangeInfo : null,
       sign: this.showSign && lead && lead.signIndex !== null ? { index: lead.signIndex, fake: lead.fake } : null,
+      blink: this.ui === 'decide' && this.blinkOn && hints?.flash != null ? hints.flash : null,
+      peek: this.ui === 'decide' ? hints?.peek ?? null : null,
     });
   }
 }

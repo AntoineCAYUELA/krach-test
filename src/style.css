@@ -103,7 +103,7 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
 .main { display: grid; grid-template-columns: 1fr 23%; gap: 1.4em; min-height: 0; }
 .chart-wrap { position: relative; min-height: 0; border-right: 1px solid var(--line); }
 .chart-wrap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-.side { display: grid; grid-template-rows: 1fr 1fr auto; gap: 0.9em; min-height: 0; }
+.side { display: grid; grid-template-rows: 1fr 1fr auto auto; gap: 0.9em; min-height: 0; }
 .order {
   border: none; border-radius: 0.5em; display: grid; place-items: center; align-content: center; gap: 0.1em;
   font-weight: 700; font-size: 1.9em; letter-spacing: 0.04em; color: #fff;
@@ -148,6 +148,26 @@ button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
   animation: rise 0.3s ease-out;
 }
 .news .tag { background: var(--gold); color: #3b2300; font-weight: 700; padding: 0.1em 0.45em; border-radius: 0.25em; font-size: 0.85em; letter-spacing: 0.06em; }
+
+/* Outils actifs et Cartes en main */
+.kit { display: grid; gap: 0.4em; }
+.kit-tools { display: flex; flex-wrap: wrap; gap: 0.3em; }
+.kit-tools:empty, .kit-hand:empty { display: none; }
+.chip { display: grid; place-items: center; width: 1.9em; height: 1.9em; border-radius: 0.35em; background: var(--panel); border: 1px solid var(--line); font-size: 0.95em; cursor: help; }
+.kit-hand { display: grid; gap: 0.3em; }
+.play-card {
+  display: flex; align-items: center; gap: 0.45em; text-align: left; padding: 0.35em 0.55em; border-radius: 0.4em;
+  border: 1px solid var(--gold); background: #2a1f0c; color: var(--ink); font-size: 0.85em; font-weight: 600;
+}
+.play-card .k { font-family: var(--font-num); font-size: 1.2em; color: var(--gold); line-height: 1; }
+.play-card:hover:not(:disabled) { filter: brightness(1.2); }
+.play-card:disabled { opacity: 0.45; cursor: default; border-color: var(--line); background: var(--panel); }
+
+/* Indices des Outils et Cartes, en haut du graphique */
+.hints { position: absolute; left: 0.6em; top: 0.4em; z-index: 1; display: grid; gap: 0.3em; justify-items: start; max-width: 70%; pointer-events: none; }
+.hint { padding: 0.25em 0.6em; border-radius: 0.35em; background: rgba(14, 26, 41, 0.9); border: 1px solid var(--line); font-size: 0.85em; animation: rise 0.25s ease-out; }
+.hint .up { color: var(--up-hi); }
+.hint .down { color: var(--down-hi); }
 
 /* Bas : les trades de la séance */
 .bottom { display: flex; align-items: center; gap: 0.6em; min-width: 0; }
@@ -255,6 +275,38 @@ dfn.new { background: rgba(244, 166, 42, 0.16); border-radius: 0.2em; }
 }
 .bubble b { color: var(--gold); margin-right: 0.3em; }
 
+/* Boutique (le Comptoir) et collection */
+.card.wide { width: min(92%, 52em); }
+.card h3 { margin: 0.2em 0 0; font-size: 1.05em; }
+.card h3 small { font-weight: 400; font-size: 0.8em; color: var(--ink-dim); margin-left: 0.4em; }
+.card .dim, .dim { color: var(--ink-dim); font-size: 0.9em; }
+.shop { background: linear-gradient(180deg, #0f1a12, var(--panel) 40%); border-color: #2f5a3a; }
+.shop-head { display: flex; justify-content: space-between; align-items: end; gap: 1em; }
+.tickets-big { font-family: var(--font-num); font-size: 1.8em; color: var(--gold); }
+.items { display: grid; grid-template-columns: repeat(auto-fill, minmax(13em, 1fr)); gap: 0.6em; }
+.item {
+  display: grid; gap: 0.25em; align-content: start; padding: 0.65em 0.75em; border-radius: 0.5em;
+  border: 1px solid var(--line); background: var(--panel-hi);
+}
+.item b { font-weight: 700; }
+.item em { font-style: normal; font-size: 0.75em; color: var(--ink-dim); text-transform: uppercase; letter-spacing: 0.06em; }
+.item span { font-size: 0.88em; line-height: 1.3; }
+.item.rare { border-color: #3a6fb5; }
+.item.rare em { color: #7fb0f0; }
+.item.legendary { border-color: var(--gold); }
+.item.legendary em { color: var(--gold); }
+.item.card-item { border-style: dashed; border-color: #8a6a2a; }
+.item.locked { opacity: 0.5; }
+.buy {
+  justify-self: start; margin-top: 0.3em; padding: 0.3em 0.7em; border: none; border-radius: 0.35em;
+  background: var(--up); color: #fff; font-weight: 700; font-family: var(--font-ui);
+}
+.buy small { font-weight: 400; opacity: 0.8; margin-left: 0.3em; }
+.buy:disabled { background: var(--line); opacity: 0.6; cursor: default; }
+.owned-list { display: flex; flex-wrap: wrap; gap: 0.4em; }
+.owned { display: inline-flex; align-items: center; gap: 0.5em; padding: 0.25em 0.3em 0.25em 0.6em; border-radius: 0.4em; background: var(--screen); border: 1px solid var(--line); font-size: 0.85em; }
+.owned button { border: 1px solid var(--line); background: transparent; color: var(--ink-dim); border-radius: 0.3em; font-size: 0.85em; padding: 0.15em 0.4em; }
+
 /* Menu */
 .menu { gap: 0.9em; }
 .logo { font-family: var(--font-ui); font-weight: 700; font-size: 3.2em; line-height: 0.9; letter-spacing: 0.04em; }
@@ -300,7 +352,7 @@ dfn.new { background: rgba(244, 166, 42, 0.16); border-radius: 0.2em; }
   .main { grid-template-columns: 1fr; grid-template-rows: minmax(260px, 1fr) auto; }
   .chart-wrap { border-right: none; border-bottom: 1px solid var(--line); }
   .side { grid-template-columns: 1fr 1fr; grid-template-rows: 64px auto; }
-  .info { grid-column: 1 / -1; }
+  .info, .kit { grid-column: 1 / -1; }
   .bottom { flex-wrap: wrap; }
   .pills { flex-wrap: wrap; width: 100%; }
   .pill { min-width: 0; flex: 1; }
